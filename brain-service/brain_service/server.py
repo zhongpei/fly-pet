@@ -23,6 +23,7 @@ from .backend import BrainBackend
 from .backends.mock import MockBackend
 from .decoder.dn_decoder import ActionDecoder, DecoderConfig
 from .emotion import EmotionConfig, EmotionEngine
+from . import nya_map
 from .protocol import AVATAR_ACTION_MAP, SensoryEvent
 from .sensory.encoder import SensoryEncoder
 from .telemetry import Sample, Telemetry
@@ -150,12 +151,14 @@ class BrainRunner(threading.Thread):
 
 
 def make_app(runner: BrainRunner) -> web.Application:
-    clients: set[web.WebSocketResponse] = set()
+    # client -> role: "lab" (Brain Lab / legacy) or "renderer" (NyaDeskPet
+    # reference frontend speaking its native protocol)
+    clients: dict[web.WebSocketResponse, str] = {}
 
     async def ws_handler(request: web.Request) -> web.WebSocketResponse:
         ws = web.WebSocketResponse(heartbeat=30)
         await ws.prepare(request)
-        clients.add(ws)
+        clients[ws] = "lab"
         print(f"[flypet] ws open ({len(clients)} clients)", flush=True)
         try:
             snap = runner.snapshot()
@@ -179,53 +182,95 @@ def make_app(runner: BrainRunner) -> web.Application:
                             await ws.send_json({"type": "error", "detail": "bad sensory_event"})
                     elif mtype == "ping":
                         await ws.send_json({"type": "pong"})
+                    elif mtype in ("model_info", "character_info"):
+                        # a NyaDeskPet-reference renderer is speaking its protocol
+                        clients[ws] = "renderer"
+                        if mtype == "model_info" and isinstance(data.get("data"), dict):
+                            info = data["data"]
+                            print(f"[flypet] renderer model_info: exprs={len(info.get('expressions', []))} "
+                                  f"hitAreas={info.get('hitAreas')}", flush=True)
+                    elif mtype == "tap_event":
+                        # Live2D hit-area tap from the reference renderer
+                        part = (data.get("data") or {}).get("hitArea", "")
+                        print(f"[flypet] tap_event part={part}", flush=True)
+                        try:
+                            runner.feed_event(SensoryEvent.from_message({"kind": "pet_click", "side": "C"}))
+                        except (KeyError, ValueError):
+                            pass
+                    elif mtype == "user_input":
+                        pass  # chat text: not a V1 sensory channel
                 elif msg.type == WSMsgType.ERROR:
                     print(f"[flypet] ws error: {ws.exception()}", flush=True)
         finally:
-            clients.discard(ws)
+            clients.pop(ws, None)
             print(f"[flypet] ws close: type={msg.type if msg else 'none'} "
                   f"code={ws.close_code} exc={ws.exception()} ({len(clients)} clients)", flush=True)
         return ws
 
     async def broadcaster(app: web.Application) -> None:
-        last_action = None
-        last_expression = None
+        last_action: dict[web.WebSocketResponse, str] = {}
+        last_expression: dict[web.WebSocketResponse, str] = {}
         while True:
             snap = runner.snapshot()
             payload_rates = {k: round(v, 1) for k, v in snap.get("rates", {}).items()}
             emotion = snap.get("emotion", {})
             params = snap.get("params", {})
             action = snap["action"]
+            expr = emotion.get("expression", "neutral")
             if clients:
-                if action != last_action:
-                    state = {"type": "brain_state", "action": action,
-                             "avatar": AVATAR_ACTION_MAP.get(action, "idle"),
-                             "expression": emotion.get("expression", "neutral"),
-                             "intensity": params.get("intensity", 0.0),
-                             "params": {"speed": params.get("speed", 0.0),
-                                        "head_angle": params.get("head_angle", 0.0)},
-                             "ts": time.time()}
-                    await asyncio.gather(*(c.send_json(state) for c in list(clients)),
+                # NyaDeskPet-reference renderers: native live2d commands
+                for c, role in list(clients.items()):
+                    if role != "renderer":
+                        continue
+                    try:
+                        if last_action.get(c) != action:
+                            await c.send_json({"type": "live2d",
+                                               "data": nya_map.motion_command(
+                                                   AVATAR_ACTION_MAP.get(action, "idle"))})
+                            last_action[c] = action
+                        if last_expression.get(c) != expr:
+                            await c.send_json({"type": "live2d",
+                                               "data": nya_map.expression_command(expr)})
+                            extras = nya_map.emotion_param_command(expr)
+                            if extras.get("parameters"):
+                                await c.send_json({"type": "live2d", "data": extras})
+                            last_expression[c] = expr
+                        await c.send_json({"type": "live2d",
+                                           "data": nya_map.param_command(
+                                               action, params, time.monotonic())})
+                    except Exception:  # noqa: BLE001 - one dead client must not stop the rest
+                        clients.pop(c, None)
+
+                legacy = [c for c, role in clients.items() if role == "lab"]
+                if legacy:
+                    if action != last_action.get("lab"):
+                        state = {"type": "brain_state", "action": action,
+                                 "avatar": AVATAR_ACTION_MAP.get(action, "idle"),
+                                 "expression": expr,
+                                 "intensity": params.get("intensity", 0.0),
+                                 "params": {"speed": params.get("speed", 0.0),
+                                            "head_angle": params.get("head_angle", 0.0)},
+                                 "ts": time.time()}
+                        await asyncio.gather(*(c.send_json(state) for c in legacy),
+                                             return_exceptions=True)
+                        last_action["lab"] = action
+                    if expr != last_expression.get("lab"):
+                        await asyncio.gather(*(c.send_json(
+                            {"type": "brain_emotion", **emotion, "ts": time.time()}
+                        ) for c in legacy), return_exceptions=True)
+                        last_expression["lab"] = expr
+                    telemetry = {"type": "brain_telemetry", "action": action,
+                                 "rates": payload_rates, "fired": snap["fired"],
+                                 "stim": snap.get("stim", {}),
+                                 "emotion": emotion,
+                                 "params": params,
+                                 "sim_t": round(snap["sim_t"], 3),
+                                 "steps_per_s": round(snap["steps_per_s"], 1),
+                                 "load": round(snap["load"], 3),
+                                 "ready": snap["ready"], "error": snap["error"],
+                                 "ts": time.time()}
+                    await asyncio.gather(*(c.send_json(telemetry) for c in legacy),
                                          return_exceptions=True)
-                    last_action = action
-                elif emotion.get("expression") != last_expression:
-                    # expression may drift while the action holds
-                    await asyncio.gather(*(c.send_json(
-                        {"type": "brain_emotion", **emotion, "ts": time.time()}
-                    ) for c in list(clients)), return_exceptions=True)
-                last_expression = emotion.get("expression")
-                telemetry = {"type": "brain_telemetry", "action": action,
-                             "rates": payload_rates, "fired": snap["fired"],
-                             "stim": snap.get("stim", {}),
-                             "emotion": emotion,
-                             "params": params,
-                             "sim_t": round(snap["sim_t"], 3),
-                             "steps_per_s": round(snap["steps_per_s"], 1),
-                             "load": round(snap["load"], 3),
-                             "ready": snap["ready"], "error": snap["error"],
-                             "ts": time.time()}
-                await asyncio.gather(*(c.send_json(telemetry) for c in list(clients)),
-                                     return_exceptions=True)
             await asyncio.sleep(0.1)
 
     async def healthz(request: web.Request) -> web.Response:

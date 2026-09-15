@@ -281,6 +281,30 @@ function setupEventListeners(): void {
     toggleUI();
   });
 
+  // [FlyPet] #interaction-area 是 pointer-events:none 的覆盖层，点击永远到不了
+  // 这里。tap 与视线跟随必须绑定在真正接收事件的 live2d-canvas 上。
+  const live2dCanvas = document.getElementById('live2d-canvas');
+  if (live2dCanvas) {
+    live2dCanvas.addEventListener('click', (e: MouseEvent) => {
+      const rect = live2dCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      window.logger.info('点击了宠物');
+      // Live2D tap 会触发 hitTest，命中时由 live2d-manager 发送 tap_event 到后端
+      window.live2dManager.tap(x, y);
+    });
+
+    let canvasMoveThrottle: number | null = null;
+    live2dCanvas.addEventListener('mousemove', (e: MouseEvent) => {
+      if (canvasMoveThrottle) return;
+      canvasMoveThrottle = window.setTimeout(() => {
+        const rect = live2dCanvas.getBoundingClientRect();
+        window.live2dManager.lookAt(e.clientX - rect.left, e.clientY - rect.top);
+        canvasMoveThrottle = null;
+      }, MOUSE_THROTTLE_MS);
+    });
+  }
+
   interactionArea.addEventListener('click', (e: MouseEvent) => {
     const rect = interactionArea.getBoundingClientRect();
     const x = e.clientX - rect.left;

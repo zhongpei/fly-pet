@@ -114,11 +114,17 @@ function createWindow(): void {
   });
 
   if (flypetMode) {
-    // FlyPet 窗口：小而贴地，由大脑决定去哪。默认 Live2D 形象，--sprite 切精灵。
-    mainWindow.setBounds({ width: 420, height: 470, x: 120, y: screen.getPrimaryDisplay().workArea.height - 470 });
-    const sprite = process.argv.includes('--sprite');
-    mainWindow.loadFile('renderer/flypet.html', sprite ? { query: { avatar: 'sprite' } } : { query: { avatar: 'live2d' } });
-    stopFlyPetLink = startFlyPetLink(() => mainWindow);
+    // FlyPet 模式：直接运行参考项目自己的前端（index.html 全家桶），
+    // 大脑服务冒充它的后端（agent:get-url 返回 brain-service 地址）；
+    // 光标传感器与窗口行走器仍由 flypet/link 驱动。--sprite 切精灵页。
+    mainWindow.setBounds({ width: 520, height: 700, x: 120, y: screen.getPrimaryDisplay().workArea.height - 720 });
+    if (process.argv.includes('--sprite')) {
+      mainWindow.loadFile('renderer/flypet.html');
+      stopFlyPetLink = startFlyPetLink(() => mainWindow);
+    } else {
+      mainWindow.loadFile('renderer/index.html');
+      stopFlyPetLink = startFlyPetLink(() => mainWindow);
+    }
   } else {
     mainWindow.loadFile('renderer/index.html');
   }
@@ -1423,6 +1429,13 @@ ipcMain.handle('agent:status', () => {
  * 获取内置 Agent 的 WebSocket URL
  */
 ipcMain.handle('agent:get-url', () => {
+  // FlyPet 模式：让参考前端直连大脑服务（它原生兼容 NyaDeskPet 后端协议）
+  if (flypetMode) {
+    return {
+      wsUrl: process.env.FLYPET_BRAIN_URL || 'ws://127.0.0.1:8020/ws',
+      httpUrl: ''
+    };
+  }
   return {
     wsUrl: agentServer.getWsUrl(),
     httpUrl: `http://127.0.0.1:${agentServer.getPort()}`
