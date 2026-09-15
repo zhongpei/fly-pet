@@ -52,11 +52,11 @@ uv run flypet-serve --backend mock          # ws://127.0.0.1:8030 默认 8020
 # 2. 真脑模式（首次自动下载 ~260MB 到 ~/fly-data）
 uv run flypet-serve --backend flyai
 
-# 3. 桌面宠物（默认 flypet 模式；--nya 回到原 NyaDeskPet 模式；--live2d 切 Live2D 形象）
+# 3. 桌面宠物（默认 Live2D 形象；--sprite 切精灵；--nya 回到原 NyaDeskPet 模式）
 cd desktop
 npm install                                 # 已装过可跳过
 npm run compile
-FLYPET_BRAIN_URL=ws://127.0.0.1:8020/ws npx electron . --live2d
+FLYPET_BRAIN_URL=ws://127.0.0.1:8020/ws npx electron .
 
 # 4. Brain Lab（浏览器打开，实时 3D 连接体 + 神经活动条）
 open http://127.0.0.1:8020/lab/
@@ -77,6 +77,13 @@ open http://127.0.0.1:8020/lab/
 动作集合（15）：`IDLE / MOVE_LEFT / MOVE_RIGHT / APPROACH / AVOID / LOOK / INTERACT /
 REST / JUMP / BACK / THREAT / WING_DISPLAY / GROOM / TURN_AWAY / WANDER`。
 行走/逃跑时窗口真实移动（速度由 DNg100 连续控制）。
+
+探索性动作（GROOM / WING_DISPLAY / TURN_AWAY）默认开启——通道真实存在、行为解释为
+探索性；`--strict` 可关回文献严格模式。
+
+> 形象说明：默认 Live2D（表情/头部追踪/眨眼呼吸等参数层完整）。
+> 精灵（`--sprite`）受 8 行素材所限，15 个动作中有 11 个与其他动作共用素材
+> （详见 `docs/v1-plan.md` 已知局限），表现力远弱于 Live2D。
 
 ## WS 协议（摘要）
 

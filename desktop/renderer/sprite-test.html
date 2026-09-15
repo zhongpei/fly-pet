@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>FlyPet Sprite Action Test</title>
+  <style>
+    html, body { margin: 0; width: 420px; height: 470px; background: #20242c; overflow: hidden;
+                 font: 12px -apple-system, sans-serif; color: #fff; }
+    #pet { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); }
+    #label { position: absolute; left: 8px; top: 8px; font-size: 16px; font-weight: bold;
+             color: #9ad1ff; text-shadow: 0 1px 3px #000; }
+    #note { position: absolute; left: 8px; bottom: 8px; color: #8b93a3; }
+  </style>
+</head>
+<body>
+  <img id="pet" alt="test" draggable="false" />
+  <div id="label">—</div>
+  <div id="note">sprite action test</div>
+  <script src="lib/pixi.min.js"></script>
+  <script src="lib/live2dcubismcore.min.js"></script>
+  <script src="lib/pixi-live2d-cubism4.min.js"></script>
+  <script type="module" src="js/flypet/sprite-test.js"></script>
+</body>
+</html>

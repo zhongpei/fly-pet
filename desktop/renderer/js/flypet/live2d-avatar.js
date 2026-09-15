@@ -38,6 +38,10 @@ const PARAM_IDS = {
     gaze_y: 'ParamEyeBallY',
     mouth_open: 'ParamMouthOpenY',
 };
+function valueOf(params, key, fallback) {
+    const v = params[key];
+    return v === undefined ? fallback : v;
+}
 export class Live2DAvatar {
     constructor(container) {
         this.container = container;
@@ -48,6 +52,7 @@ export class Live2DAvatar {
         this.params = { speed: 0, head_angle: 0 };
         this.arousal = 0;
         this.valence = 0;
+        this._nextBlink = performance.now() / 1000 + 2 + Math.random() * 3;
     }
     async load() {
         const w = window;
@@ -112,16 +117,37 @@ export class Live2DAvatar {
             if (id)
                 core.setParameterValueById(id, value);
         };
-        set('head_turn_x', this.params.head_angle);
+        const t = performance.now() / 1000;
+        const blink = this.blinkValue(t);
+        set('head_turn_x', this.params.head_angle + (1 - this.arousal) * 3.5 * Math.sin(t * 0.7));
         set('gaze_x', this.params.head_angle / 25);
+        set('head_turn_y', 2.0 * Math.sin(t * 0.5 + 1.3) * (1 - this.arousal * 0.7));
+        set('breath', 0.5 + 0.4 * Math.sin(t * 2.1));
         if (this.expr === 'content' && this.valence > 0.5)
             set('head_tilt', 3);
-        for (const [alias, value] of Object.entries(expressionParams(this.expr)))
+        const preset = expressionParams(this.expr);
+        for (const [alias, value] of Object.entries(preset))
             set(alias, value);
-        if (this.expr === 'neutral') {
+        if (blink < 1) {
+            set('left_eye_open', Math.min(valueOf(preset, 'left_eye_open', 0.75 + 0.25 * this.arousal), blink));
+            set('right_eye_open', Math.min(valueOf(preset, 'right_eye_open', 0.75 + 0.25 * this.arousal), blink));
+        }
+        else if (this.expr === 'neutral') {
             const open = 0.75 + 0.25 * this.arousal;
             set('left_eye_open', open);
             set('right_eye_open', open);
         }
+    }
+    blinkValue(t) {
+        if (this.expr === 'sleepy')
+            return 1;
+        if (t < this._nextBlink)
+            return 1;
+        const phase = (t - this._nextBlink) / 0.24;
+        if (phase >= 1) {
+            this._nextBlink = t + 2 + Math.random() * 4;
+            return 1;
+        }
+        return Math.max(0.05, Math.abs(1 - 2 * phase));
     }
 }

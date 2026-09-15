@@ -52,7 +52,9 @@ class DecoderConfig:
     interact_hold: float = 2.0        # a click stays interactable this long
     wander_after: float = 8.0         # idle seconds before a wander may start
     wander_span: tuple = (2.0, 4.5)   # wander duration range, seconds
-    speculative: bool = False         # gates TURN_AWAY / WING_DISPLAY / GROOM
+    speculative: bool = True          # TURN_AWAY / WING_DISPLAY / GROOM (named
+                                      # channels, exploratory behaviour reading;
+                                      # set False for literature-only strictness)
 
 
 @dataclass

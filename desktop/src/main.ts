@@ -114,10 +114,10 @@ function createWindow(): void {
   });
 
   if (flypetMode) {
-    // FlyPet 精灵窗口：小而贴地，由大脑决定去哪；--live2d 切换 Live2D 形象
+    // FlyPet 窗口：小而贴地，由大脑决定去哪。默认 Live2D 形象，--sprite 切精灵。
     mainWindow.setBounds({ width: 420, height: 470, x: 120, y: screen.getPrimaryDisplay().workArea.height - 470 });
-    const live2d = process.argv.includes('--live2d');
-    mainWindow.loadFile('renderer/flypet.html', live2d ? { query: { avatar: 'live2d' } } : undefined);
+    const sprite = process.argv.includes('--sprite');
+    mainWindow.loadFile('renderer/flypet.html', sprite ? { query: { avatar: 'sprite' } } : { query: { avatar: 'live2d' } });
     stopFlyPetLink = startFlyPetLink(() => mainWindow);
   } else {
     mainWindow.loadFile('renderer/index.html');

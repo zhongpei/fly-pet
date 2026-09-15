@@ -24,14 +24,15 @@ const bridge = (window as unknown as {
 
 // ---- avatar provider selection ---------------------------------------------
 
-const wantLive2D = new URLSearchParams(location.search).get('avatar') === 'live2d';
+// default is Live2D (richer expression layer); ?avatar=sprite keeps the fallback
+const wantSprite = new URLSearchParams(location.search).get('avatar') === 'sprite';
 let avatar: AvatarProvider;
-if (wantLive2D) {
-  petEl.style.display = 'none';
-  avatar = new Live2DAvatar(live2dHost);
-} else {
+if (wantSprite) {
   live2dHost.style.display = 'none';
   avatar = new SpriteAvatar(petEl);
+} else {
+  petEl.style.display = 'none';
+  avatar = new Live2DAvatar(live2dHost);
 }
 avatar.load().catch((err: Error) => {
   hud.textContent = `avatar load failed: ${err.message}`;

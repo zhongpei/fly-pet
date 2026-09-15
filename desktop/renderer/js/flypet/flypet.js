@@ -4,15 +4,15 @@ const hud = document.getElementById('hud');
 const petEl = document.getElementById('pet');
 const live2dHost = document.getElementById('live2d');
 const bridge = window.electronAPI?.flypet;
-const wantLive2D = new URLSearchParams(location.search).get('avatar') === 'live2d';
+const wantSprite = new URLSearchParams(location.search).get('avatar') === 'sprite';
 let avatar;
-if (wantLive2D) {
-    petEl.style.display = 'none';
-    avatar = new Live2DAvatar(live2dHost);
-}
-else {
+if (wantSprite) {
     live2dHost.style.display = 'none';
     avatar = new SpriteAvatar(petEl);
+}
+else {
+    petEl.style.display = 'none';
+    avatar = new Live2DAvatar(live2dHost);
 }
 avatar.load().catch((err) => {
     hud.textContent = `avatar load failed: ${err.message}`;

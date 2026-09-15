@@ -56,6 +56,11 @@ const PARAM_IDS: Record<string, string> = {
   mouth_open: 'ParamMouthOpenY',
 };
 
+function valueOf(params: Record<string, number>, key: string, fallback: number): number {
+  const v = params[key];
+  return v === undefined ? fallback : v;
+}
+
 export class Live2DAvatar implements AvatarProvider {
   private app: any = null;
   private model: any = null;
@@ -131,15 +136,39 @@ export class Live2DAvatar implements AvatarProvider {
       const id = PARAM_IDS[alias];
       if (id) core.setParameterValueById(id, value);
     };
-    set('head_turn_x', this.params.head_angle);
+    const t = performance.now() / 1000;
+
+    // idle life: blink, breath, gentle sway when the brain is not steering
+    const blink = this.blinkValue(t);
+    set('head_turn_x', this.params.head_angle + (1 - this.arousal) * 3.5 * Math.sin(t * 0.7));
     set('gaze_x', this.params.head_angle / 25);
+    set('head_turn_y', 2.0 * Math.sin(t * 0.5 + 1.3) * (1 - this.arousal * 0.7));
+    set('breath', 0.5 + 0.4 * Math.sin(t * 2.1));   // ParamBreath if the model has it
     if (this.expr === 'content' && this.valence > 0.5) set('head_tilt', 3); // sweet spot
-    for (const [alias, value] of Object.entries(expressionParams(this.expr))) set(alias, value);
-    // arousal keeps a small energy in the eyes even in neutral
-    if (this.expr === 'neutral') {
+    const preset = expressionParams(this.expr);
+    for (const [alias, value] of Object.entries(preset)) set(alias, value);
+    if (blink < 1) {
+      // blinks override whatever the expression preset says about the eyes
+      set('left_eye_open', Math.min(valueOf(preset, 'left_eye_open', 0.75 + 0.25 * this.arousal), blink));
+      set('right_eye_open', Math.min(valueOf(preset, 'right_eye_open', 0.75 + 0.25 * this.arousal), blink));
+    } else if (this.expr === 'neutral') {
       const open = 0.75 + 0.25 * this.arousal;
       set('left_eye_open', open);
       set('right_eye_open', open);
     }
   }
+
+  /** 1 = open, ~0.05 = closed; 1 most of the time, dips ~240 ms every 2-6 s. */
+  private blinkValue(t: number): number {
+    if (this.expr === 'sleepy') return 1; // sleepy keeps its preset lids
+    if (t < this._nextBlink) return 1;
+    const phase = (t - this._nextBlink) / 0.24;
+    if (phase >= 1) {
+      this._nextBlink = t + 2 + Math.random() * 4;
+      return 1;
+    }
+    return Math.max(0.05, Math.abs(1 - 2 * phase));
+  }
+  private _nextBlink = performance.now() / 1000 + 2 + Math.random() * 3;
+
 }

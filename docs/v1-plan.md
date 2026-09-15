@@ -112,3 +112,19 @@ Provider 保留，表情退化为切换表情行/气泡。
 5. **新感官事件**：双击/长按/物体分类/键盘。
 6. 每步保持：单测更新 + demo 脚本扩展 + mock 后端同步支持（mock 造出
    对应通道的假放电）。
+
+
+## 7. 已知局限（2026-09-15 排查）
+
+**精灵形象的观感动作少**，三层原因：
+
+1. 素材上限：TonyNa 8 行精灵表 vs 大脑 15 动作，11 个动作与他人共用素材
+   （walk/run/back/wander→running；waving/threat/display→waving；
+   look/groom→review；idle/turn_away→idle）。实测对比见 sprite-test 页。
+2. 闲置无戏：V0 重写 character.json 时清空了原版的 automaticActions，
+   且 SpriteAvatar 未实现随机闲置小动作——而真脑 90% 时间处于安静态。
+3. 素材在 V0 被减半分辨率（内容未变，窗口适配需要）。
+
+**决策**：Live2D 升为默认形象（参数层表现力完整），精灵降为极简 fallback
+不再投入；探索性动作默认开启（`--strict` 收紧）。Live2D 侧补齐了闲置
+生命感（自动眨眼 / 呼吸 / 低觉醒轻微摆头）。

@@ -112,18 +112,20 @@ def test_busy_brain_without_cues_is_idle():
     assert action is BrainAction.IDLE
 
 
-def test_speculative_actions_gated():
-    enc, dec = make_decoder()  # speculative defaults to False
+def test_speculative_actions_on_by_default():
+    enc, dec = make_decoder()  # speculative defaults to True (named channels,
+    action, _ = settle(dec, act(DNg01=25.0))          # exploratory behaviour reading)
+    assert action is BrainAction.GROOM
+    action, _ = settle(dec, act(DNp10_R=25.0))
+    assert action is BrainAction.WING_DISPLAY
+    action, _ = settle(dec, act(DNa03_L=18.0))
+    assert action is BrainAction.TURN_AWAY
+
+
+def test_strict_mode_gates_speculative_actions():
+    enc, dec = make_decoder(speculative=False)
     action, _ = settle(dec, act(DNg01=25.0, DNp10_L=25.0))
     assert action is not BrainAction.GROOM and action is not BrainAction.WING_DISPLAY
-
-    enc2, dec2 = make_decoder(speculative=True)
-    action, _ = settle(dec2, act(DNg01=25.0))
-    assert action is BrainAction.GROOM
-    action, _ = settle(dec2, act(DNp10_R=25.0))
-    assert action is BrainAction.WING_DISPLAY
-    action, _ = settle(dec2, act(DNa03_L=18.0))
-    assert action is BrainAction.TURN_AWAY
 
 
 def test_wander_scheduled():

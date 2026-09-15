@@ -31,7 +31,7 @@ class EmotionConfig:
     retreat_drive: float = 0.55
     groom_every: tuple = (25.0, 60.0)   # random idle interval, seconds
     display_every: tuple = (30.0, 90.0)  # when content
-    speculative: bool = False         # gates groom/display/turnaway drives
+    speculative: bool = True         # gates groom/display drives (exploratory)
 
 
 @dataclass

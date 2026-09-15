@@ -281,11 +281,11 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--free-run", action="store_true",
                         help="step as fast as possible instead of pacing to 50 Hz")
-    parser.add_argument("--speculative", action="store_true",
-                        help="enable speculative drives/actions (GROOM, WING_DISPLAY, TURN_AWAY)")
+    parser.add_argument("--strict", action="store_true",
+                        help="disable speculative drives/actions (GROOM, WING_DISPLAY, TURN_AWAY)")
     args = parser.parse_args()
 
-    runner = BrainRunner(args.backend, pace=not args.free_run, speculative=args.speculative)
+    runner = BrainRunner(args.backend, pace=not args.free_run, speculative=not args.strict)
     runner.start()
     print(f"[flypet] brain-service on ws://{args.host}:{args.port}/ws (backend={args.backend})")
     web.run_app(make_app(runner), host=args.host, port=args.port, print=None)
