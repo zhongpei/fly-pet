@@ -102,7 +102,8 @@ class BrainRunner(threading.Thread):
                     emotion={"arousal": round(emotion.arousal, 3),
                              "valence": round(emotion.valence, 3),
                              "expression": emotion.expression.value,
-                             "annoyance": emotion.annoyance},
+                             "annoyance": emotion.annoyance,
+                             "debug": emotion.debug},
                 )
             if self.pace and info.wall_dt < DT:
                 time.sleep(DT - info.wall_dt)

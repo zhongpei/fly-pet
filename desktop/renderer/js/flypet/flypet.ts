@@ -39,41 +39,53 @@ avatar.load().catch((err: Error) => {
 });
 
 // ---- touch -> sensory events ------------------------------------------------
+// Handlers go on the VISIBLE container: in Live2D mode the sprite <img> is
+// display:none and would never receive real pointer events.
 
 // single click = poke; two quick clicks = startle; hold >= 600 ms = petting
 let lastClickAt = 0;
 let downAt = 0;
+let pointerDown = false;
 let petting = false;
 let suppressClick = false;
 
-petEl.addEventListener('pointerdown', () => {
-  downAt = Date.now();
-  suppressClick = false;
-  window.setTimeout(() => {
-    if (Date.now() - downAt >= 550 && !petting) {
-      petting = true;
-      suppressClick = true;
-      bridge?.sensory('pet_long_press');
+function bindTouch(el: HTMLElement): void {
+  el.addEventListener('pointerdown', () => {
+    pointerDown = true;
+    downAt = Date.now();
+    suppressClick = false;
+    window.setTimeout(() => {
+      // the pointer must STILL be down: a quick click releases long before
+      // this timer fires, and petting must not latch on without a release
+      if (pointerDown && Date.now() - downAt >= 550 && !petting) {
+        petting = true;
+        suppressClick = true;
+        bridge?.sensory('pet_long_press');
+      }
+    }, 600);
+  });
+  const release = () => {
+    pointerDown = false;
+    if (petting) {
+      petting = false;
+      bridge?.sensory('pet_long_release');
     }
-  }, 600);
-});
-petEl.addEventListener('pointerup', () => {
-  if (petting) {
-    petting = false;
-    bridge?.sensory('pet_long_release');
-  }
-});
-petEl.addEventListener('click', () => {
-  if (suppressClick) return;
-  bridge?.tap();
-  const t = Date.now();
-  if (t - lastClickAt < 350) {
-    bridge?.sensory('pet_double_click');
-    lastClickAt = 0;
-  } else {
-    lastClickAt = t;
-  }
-});
+  };
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
+  el.addEventListener('click', () => {
+    if (suppressClick) return;
+    bridge?.tap();
+    const t = Date.now();
+    if (t - lastClickAt < 350) {
+      bridge?.sensory('pet_double_click');
+      lastClickAt = 0;
+    } else {
+      lastClickAt = t;
+    }
+  });
+}
+bindTouch(wantSprite ? petEl : live2dHost);
 
 // ---- brain output -----------------------------------------------------------
 

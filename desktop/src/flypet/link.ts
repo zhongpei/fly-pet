@@ -125,7 +125,10 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
     const bounds = win.getBounds();
     const display = screen.getDisplayMatching(bounds).workArea;
     const nx = Math.max(display.x, Math.min(display.x + display.width - bounds.width, bounds.x + Math.round(walkVx * 0.033)));
-    if (nx !== bounds.x) win.setPosition(nx, bounds.y);
+    if (nx !== bounds.x) {
+      win.setPosition(nx, bounds.y);
+      lastSelfMove = Date.now();  // walking is not the user dragging the pet
+    }
     if (nx === display.x || nx === display.x + display.width - bounds.width) {
       walkVx = 0; // reached the edge; keep the animation but stop moving
       if (walkerTimer !== null) {
@@ -134,6 +137,7 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
       }
     }
   };
+  let lastSelfMove = 0;
 
   // ---- sensors -----------------------------------------------------------
 
@@ -141,7 +145,10 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
     const win = getWindow();
     if (!win || win.isDestroyed()) return;
     const bounds = win.getBounds();
-    if (lastBounds && (bounds.x !== lastBounds.x || bounds.y !== lastBounds.y)) {
+    if (lastBounds && (bounds.x !== lastBounds.x || bounds.y !== lastBounds.y)
+        && Date.now() - lastSelfMove > 150) {
+      // bounds moved by something other than our own walking => the user is
+      // dragging the pet around
       sendEvent({ type: 'sensory_event', kind: 'pet_drag', ts: Date.now() / 1000 });
     }
     lastBounds = { ...bounds };

@@ -41,6 +41,7 @@ class EmotionState:
     expression: Expression = Expression.NEUTRAL
     drives: dict[str, float] = field(default_factory=dict)
     annoyance: int = 0
+    debug: dict = field(default_factory=dict)
 
 
 class EmotionEngine:
@@ -84,10 +85,18 @@ class EmotionEngine:
             st.valence = min(1.0, st.valence + self.cfg.petting_valence * 0.016)  # per step
             if held > 1.2:
                 st.valence = min(1.0, st.valence + 0.002)
+            if held > 10.0:  # safety: a lost release must not pet forever
+                self.on_petting(False)
         st.valence -= cfg.valence_decay * 0.016 * abs(st.valence)  # decay toward 0
         st.annoyance = len([x for x in self._click_times if now() - x < cfg.annoy_window])
         st.expression = self._expression(resting)
         st.drives = self._drives()
+        st.debug = {
+            "click_times": len(self._click_times),
+            "threat_hold_s": round(max(0.0, self._drive_until.get("_threat", 0) - now()), 2),
+            "petting_engine": self._petting,
+            "oldest_click_age": round(now() - min(self._click_times), 1) if self._click_times else None,
+        }
         return st
 
     def _expression(self, resting: bool) -> Expression:
@@ -139,4 +148,6 @@ class EmotionEngine:
         return drives
 
     def _hold(self, key: str, seconds: float) -> None:
-        self._drive_until[key] = max(now(), self._drive_until.get(key, 0)) + seconds
+        """Set an absolute deadline (NOT cumulative: called every step while the
+        condition holds, adding would balloon the hold into minutes)."""
+        self._drive_until[key] = max(now() + seconds, self._drive_until.get(key, 0))
