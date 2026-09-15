@@ -2,6 +2,7 @@
 
     uv run flypet-serve --backend mock --port 8020   # terminal 1
     uv run python brain-service/scripts/demo.py      # terminal 2
+    (or --backend flyai for the real connectome)
 """
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ async def main() -> None:
         print(f"connected to {welcome['backend']} (ready={welcome['ready']})")
 
         async def watch(seconds: float, label: str) -> None:
-            """Print brain_state transitions while the scenario segment runs."""
+            """Print brain_state / emotion transitions while the segment runs."""
             t0 = asyncio.get_event_loop().time()
             last = None
             while asyncio.get_event_loop().time() - t0 < seconds:
@@ -34,7 +35,8 @@ async def main() -> None:
                     continue
                 if msg["type"] == "brain_state" and msg["action"] != last:
                     last = msg["action"]
-                    print(f"  {label:<22} -> {msg['action']} ({msg['avatar']})")
+                    tail = f" [{msg.get('expression')}]" if msg.get("expression") else ""
+                    print(f"  {label:<20} -> {msg['action']} ({msg['avatar']}){tail}")
 
         print("[1] cursor appears on the left, lingers")
         for _ in range(6):
@@ -42,21 +44,30 @@ async def main() -> None:
             await asyncio.sleep(0.25)
         await watch(2.5, "mouse-left")
 
-        print("[2] cursor rushes at the pet")
-        await ev(ws, "mouse_approach", side="L", speed=900)
-        await watch(2.0, "looming")
-
-        print("[3] user pokes the pet")
+        print("[2] double click -> startle (JUMP)")
         await ev(ws, "pet_click")
-        await watch(2.5, "click")
+        await ev(ws, "pet_double_click")
+        await watch(1.5, "startle")
 
-        print("[4] an object appears, then is removed")
-        await ev(ws, "object_appear")
-        await watch(2.0, "object")
+        print("[3] user pokes the pet repeatedly -> annoyance -> THREAT")
+        for _ in range(4):
+            await ev(ws, "pet_click")
+            await asyncio.sleep(0.4)
+        await watch(2.5, "poked")
+
+        print("[4] petting (long press) -> content")
+        await ev(ws, "pet_long_press")
+        await watch(2.0, "petting")
+        await ev(ws, "pet_long_release")
+        await watch(1.0, "released")
+
+        print("[5] a rival shows up -> odour threat")
+        await ev(ws, "object_appear", cls="rival")
+        await watch(2.0, "rival")
         await ev(ws, "object_remove")
-        await watch(1.5, "object-gone")
+        await watch(1.5, "rival-gone")
 
-        print("[5] desktop goes quiet (REST needs a while)")
+        print("[6] desktop goes quiet (REST needs a while)")
         await watch(2.0, "quiet")
         print("demo done")
 

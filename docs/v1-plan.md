@@ -4,6 +4,18 @@
 > 动作扩展**生物优先**（只接连接体里有明确命令神经元/命名群体的行为）；
 > 表情载体 **Live2D 为主**（sprite 作轻量 fallback）；**连续参数层进 V1**。
 
+## 执行状态（2026-09-15，V1.0 完成）
+
+| 项 | 状态 |
+|---|---|
+| 校准 | ✅ 10 通道剂量响应曲线（`scripts/calibrate_channels.py` / `calibrate_result.json`）：直接驱动 0.4 强度起可持续放电（16.7Hz），饱和 ~25Hz；DNp10 基线自发放 4.2Hz |
+| 协议 v2 | ✅ brain_state 带 expression/intensity/params；brain_emotion 消息 |
+| 新动作 | ✅ JUMP/BACK/THREAT 真脑验证；GROOM/WING_DISPLAY/TURN_AWAY 为 speculative（--speculative） |
+| 情绪层 | ✅ arousal×valence→7 表情；annoyance→threat 驱动；抚摸→valence+ |
+| 新感官 | ✅ 双击/长按/物体分类/键盘（键盘编码器就绪，桌面端全局钩子留待后续） |
+| Live2D | ✅ Live2DAvatar（mao_pro，语义参数表达式 + 连续头部朝向）；sprite 保留为默认 |
+| 测试 | ✅ 42 单测全过；demo v2 全情景验证（含真脑 JUMP/THREAT 实拍） |
+
 ## 1. 三层输出架构
 
 ```text

@@ -2,9 +2,10 @@
  * SpriteAvatar: character.json + sprite.png sprite-sheet player
  * (format borrowed from TonyNa-code/desktop-pet, MIT).
  *
- * Avatar action names come from brain_service.protocol.AVATAR_ACTION_MAP:
- *   idle, walk_left, walk_right, walk, run, look, waving, sleep
+ * Implements the AvatarProvider contract; expression/params are V1 no-ops
+ * except speed -> animation tempo (Live2D carries the full expression layer).
  */
+import type { AvatarParams, AvatarProvider } from './avatar';
 
 export interface CharacterJson {
   sprite: string;
@@ -23,9 +24,17 @@ const AVATAR_TO_STATE: Record<string, { state: string; interval?: number }> = {
   look: { state: 'review' },
   waving: { state: 'waving' },
   sleep: { state: 'failed', interval: 380 },
+  // V1 actions (sprite fallback: closest available row)
+  jump: { state: 'jumping', interval: 110 },
+  back: { state: 'running', interval: 260 },
+  threat: { state: 'waving', interval: 70 },      // agitated flailing
+  display: { state: 'waving', interval: 260 },    // proud slow wave
+  groom: { state: 'review', interval: 220 },      // hand-to-face reads as grooming
+  turn_away: { state: 'idle', interval: 1200 },
+  wander: { state: 'running', interval: 240 },
 };
 
-export class SpriteAvatar {
+export class SpriteAvatar implements AvatarProvider {
   private img = new Image();
   private char: CharacterJson | null = null;
   private stateName = 'idle';
@@ -34,16 +43,17 @@ export class SpriteAvatar {
   private acc = 0;
   private lastT = 0;
   private ready = false;
+  private params: AvatarParams = { speed: 0, head_angle: 0 };
 
   constructor(private el: HTMLImageElement) {}
 
-  async load(baseUrl: string): Promise<void> {
-    const char = await this.loadJson(baseUrl);
+  async load(): Promise<void> {
+    const char = await this.loadJson('flypet/assets/');
     this.char = char;
     await new Promise<void>((resolve, reject) => {
       this.img.onload = () => resolve();
       this.img.onerror = () => reject(new Error(`sprite load failed: ${this.img.src}`));
-      this.img.src = `${baseUrl}${char.sprite}`;
+      this.img.src = `flypet/assets/${char.sprite}`;
     });
     this.ready = true;
     this.setAction('idle');
@@ -75,13 +85,23 @@ export class SpriteAvatar {
     if (!this.char) return;
     const mapping = AVATAR_TO_STATE[avatar] ?? AVATAR_TO_STATE.idle;
     const st = this.char.states[mapping.state] ?? this.char.states.idle;
-    const interval = mapping.interval ?? st.interval;
-    if (mapping.state === this.stateName && interval === this.interval) return;
+    // walk speed raises the animation tempo
+    const tempo = 1 - Math.min(0.5, (this.params.speed || 0) * 0.5);
+    const interval = (mapping.interval ?? st.interval) * (avatar === 'walk' || avatar === 'run' ? tempo : 1);
+    if (mapping.state === this.stateName && Math.abs(interval - this.interval) < 4) return;
     this.stateName = mapping.state;
     this.interval = interval;
     this.frame = 0;
     this.acc = 0;
     this.apply();
+  }
+
+  setExpression(_expr: string, _arousal: number, _valence: number): void {
+    // sprite V1: expressions are Live2D-only
+  }
+
+  setParams(params: AvatarParams): void {
+    this.params = params;
   }
 
   private apply(): void {

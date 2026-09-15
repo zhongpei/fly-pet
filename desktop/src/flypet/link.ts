@@ -14,10 +14,12 @@ import { CursorSensor, Rect, SensoryMsg } from './sensor';
 const RECONNECT_MS = 2000;
 const POLL_MS = 80;
 
-/** px/s horizontal velocity for each brain action. */
+/** Window velocity (px/s) per action; speed-scaled where the brain says so. */
 const WALK_SPEED: Record<string, number> = {
   MOVE_LEFT: -130,
   MOVE_RIGHT: 130,
+  BACK: 110,        // away from the cursor's last side
+  WANDER: 70,       // direction picked when the action starts
 };
 
 export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: string): () => void {
@@ -31,6 +33,7 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
   let walkerTimer: NodeJS.Timeout | null = null;
   let linkConnected = false;
   let backendName = '';
+  let previousAction = '';
 
   const status = (s: Record<string, unknown>) => {
     if ('connected' in s) linkConnected = Boolean(s.connected);
@@ -63,8 +66,12 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
         return;
       }
       if (msg.type === 'brain_state' && msg.action && msg.avatar) {
-        onAction(msg.action);
-        getWindow()?.webContents.send('flypet:action', { action: msg.action, avatar: msg.avatar });
+        onAction(msg.action, (msg as { params?: { speed?: number } }).params);
+        getWindow()?.webContents.send('flypet:action', {
+          action: msg.action, avatar: msg.avatar,
+          expression: (msg as { expression?: string }).expression,
+          params: (msg as { params?: unknown }).params,
+        });
       } else if (msg.type === 'brain_telemetry') {
         getWindow()?.webContents.send('flypet:telemetry', msg);
       } else if (msg.type === 'welcome') {
@@ -80,14 +87,23 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
 
   // ---- window walker -----------------------------------------------------
 
-  const onAction = (action: string) => {
+  const onAction = (action: string, params?: { speed?: number }) => {
+    const speed = Math.max(0, Math.min(1, params?.speed ?? 0));
     if (action === 'APPROACH') {
-      walkVx = lastX < 0 ? -170 : lastX > 0 ? 170 : 0; // walk toward the cursor
-    } else if (action === 'AVOID') {
-      walkVx = lastX <= 0 ? 300 : -300;               // sprint away from it
+      walkVx = (lastX < 0 ? -1 : lastX > 0 ? 1 : 0) * (120 + 200 * speed); // walk toward the cursor
+    } else if (action === 'AVOID' || action === 'JUMP') {
+      walkVx = (lastX <= 0 ? 1 : -1) * (260 + 140 * speed);               // sprint away from it
+    } else if (action === 'BACK') {
+      walkVx = (lastX <= 0 ? 1 : -1) * WALK_SPEED.BACK;                   // slow retreat
+    } else if (action === 'WANDER') {
+      if (walkVx === 0 || previousAction !== 'WANDER') {
+        walkVx = (Math.random() < 0.5 ? -1 : 1) * WALK_SPEED.WANDER;      // pick a direction once
+      }
     } else {
-      walkVx = WALK_SPEED[action] ?? 0;
+      const base = WALK_SPEED[action] ?? 0;
+      walkVx = base === 0 ? 0 : Math.sign(base) * (Math.abs(base) * (0.7 + 0.6 * speed));
     }
+    previousAction = action;
     if (walkVx !== 0 && walkerTimer === null) {
       walkerTimer = setInterval(step, 33);
     }
@@ -136,6 +152,14 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
   };
   ipcMain.on('flypet:tap', onTap);
 
+  // generic pass-through for V1 events (double click, petting, objects, ...)
+  const onSensory = (_e: Electron.IpcMainEvent, payload?: { kind?: string } & Record<string, unknown>) => {
+    const { kind, ...extra } = payload ?? {};
+    if (!kind) return;
+    sendEvent({ type: 'sensory_event', kind, ts: Date.now() / 1000, ...extra } as SensoryMsg);
+  };
+  ipcMain.on('flypet:sensory', onSensory);
+
   // pages that load after the link came up ask for the current state
   ipcMain.handle('flypet:status-query', () => ({ connected: linkConnected, backend: backendName }));
 
@@ -146,6 +170,7 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
     clearInterval(pollTimer);
     if (walkerTimer !== null) clearInterval(walkerTimer);
     ipcMain.removeListener('flypet:tap', onTap);
+    ipcMain.removeListener('flypet:sensory', onSensory);
     ipcMain.removeHandler('flypet:status-query');
     ws?.close();
   };

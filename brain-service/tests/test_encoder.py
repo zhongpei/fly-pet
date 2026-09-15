@@ -50,3 +50,36 @@ def test_object_smell_persists_until_removal():
     assert channel(enc, "odor") > 0
     feed(enc, SensoryKind.OBJECT_REMOVE)
     assert channel(enc, "odor") == 0
+
+
+def test_double_click_startles_bilateral():
+    enc = SensoryEncoder()
+    feed(enc, SensoryKind.PET_DOUBLE_CLICK)
+    s = dict(enc.stimuli())
+    assert s["loom_L"] > 0.8 and s["loom_R"] > 0.8
+
+
+def test_long_press_pets_until_release():
+    enc = SensoryEncoder()
+    feed(enc, SensoryKind.PET_LONG_PRESS)
+    assert channel(enc, "touch_L") > 0  # sustained (no short hold expiry)
+    feed(enc, SensoryKind.PET_LONG_RELEASE)
+    enc._touch_until -= 1.0
+    assert channel(enc, "touch_L") == 0
+
+
+def test_object_class_modulates_odour():
+    enc = SensoryEncoder()
+    feed(enc, SensoryKind.OBJECT_APPEAR, cls="food")
+    food = channel(enc, "odor")
+    feed(enc, SensoryKind.OBJECT_REMOVE)
+    feed(enc, SensoryKind.OBJECT_APPEAR, cls="rival")
+    rival = channel(enc, "odor")
+    assert rival > food > 0
+
+
+def test_keyboard_is_mild_bilateral_curiosity():
+    enc = SensoryEncoder()
+    feed(enc, SensoryKind.KEYBOARD_ACTIVITY)
+    s = dict(enc.stimuli())
+    assert 0 < s["chase_L"] < 0.4 and 0 < s["chase_R"] < 0.4

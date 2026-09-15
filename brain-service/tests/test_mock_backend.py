@@ -54,3 +54,20 @@ def test_step_is_fast():
     for _ in range(1000):
         b.step([("chase_L", 0.5)])
     assert (time.perf_counter() - t0) / 1000 < DT_LIMIT
+
+
+def test_threat_drive_raises_pip10():
+    b = MockBackend()
+    b.reset()
+    for _ in range(30):
+        b.step([("threat_L", 0.6)])
+    rates = b.get_activity().rates
+    assert rates["pIP10_L"] > rates["pIP10_R"] + 3.0
+
+
+def test_retreat_drive_raises_mdn():
+    b = MockBackend()
+    b.reset()
+    for _ in range(30):
+        b.step([("retreat_L", 0.55), ("retreat_R", 0.55)])
+    assert b.get_activity().rates["MDN"] > 10.0

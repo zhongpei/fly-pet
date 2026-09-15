@@ -22,6 +22,7 @@ from aiohttp import WSMsgType, web
 from .backend import BrainBackend
 from .backends.mock import MockBackend
 from .decoder.dn_decoder import ActionDecoder, DecoderConfig
+from .emotion import EmotionConfig, EmotionEngine
 from .protocol import AVATAR_ACTION_MAP, SensoryEvent
 from .sensory.encoder import SensoryEncoder
 from .telemetry import Sample, Telemetry
@@ -32,19 +33,23 @@ DT = 0.020
 class BrainRunner(threading.Thread):
     """Owns the backend and steps it in a tight loop off the asyncio thread."""
 
-    def __init__(self, backend_name: str, pace: bool = True) -> None:
+    def __init__(self, backend_name: str, pace: bool = True, speculative: bool = False) -> None:
         super().__init__(daemon=True, name="brain-runner")
         self.backend_name = backend_name
         self.pace = pace
+        self.speculative = speculative
         self.encoder = SensoryEncoder()
-        self.decoder = ActionDecoder(self.encoder, DecoderConfig())
+        self.decoder = ActionDecoder(self.encoder, DecoderConfig(speculative=speculative))
+        self.emotion = EmotionEngine(EmotionConfig(speculative=speculative))
         self.backend: BrainBackend = MockBackend() if backend_name == "mock" else None
         self.telemetry = Telemetry()
         self._lock = threading.Lock()
         self._snap: dict = {
             "action": "IDLE", "rates": {}, "fired": 0, "sim_t": 0.0,
             "steps_per_s": 0.0, "load": 0.0, "ready": backend_name == "mock",
-            "error": None, "backend": backend_name,
+            "error": None, "backend": backend_name, "stim": {},
+            "emotion": {"arousal": 0.0, "valence": 0.0, "expression": "neutral"},
+            "params": {"speed": 0.0, "head_angle": 0.0, "intensity": 0.0},
         }
         self._stop = threading.Event()
 
@@ -66,10 +71,16 @@ class BrainRunner(threading.Thread):
                 continue
             with self._lock:
                 stimuli = self.encoder.stimuli()
-            info = backend.step(stimuli)
+            emotion = self.emotion.update(
+                total_rate=self._snap.get("total", 0.0) or sum(self._snap["rates"].values()),
+                sensory_energy=self.encoder.sensory_energy(),
+                resting=False,
+            )
+            all_stimuli = stimuli + list(emotion.drives.items())
+            info = backend.step(all_stimuli)
             activity = backend.get_activity()
             action, _changed = self.decoder.update(activity)
-            stim = {ch: round(s, 2) for ch, s in stimuli}
+            stim = {ch: round(s, 2) for ch, s in all_stimuli}
 
             steps_in_window += 1
             t = time.monotonic()
@@ -87,6 +98,11 @@ class BrainRunner(threading.Thread):
                     action=action.value, rates=dict(activity.rates), fired=info.fired,
                     sim_t=info.sim_t, steps_per_s=sps,
                     load=min(1.0, info.wall_dt / DT), total=activity.total, stim=stim,
+                    params=dict(self.decoder.state.params),
+                    emotion={"arousal": round(emotion.arousal, 3),
+                             "valence": round(emotion.valence, 3),
+                             "expression": emotion.expression.value,
+                             "annoyance": emotion.annoyance},
                 )
             if self.pace and info.wall_dt < DT:
                 time.sleep(DT - info.wall_dt)
@@ -105,6 +121,24 @@ class BrainRunner(threading.Thread):
     def feed_event(self, ev: SensoryEvent) -> None:
         with self._lock:
             self.encoder.feed(ev)
+            self._emotion_event(ev)
+
+    def _emotion_event(self, ev: SensoryEvent) -> None:
+        """Route affect-relevant events into the emotion engine."""
+        from .protocol import SensoryKind as K
+
+        emo = self.emotion
+        if ev.kind is K.PET_CLICK or ev.kind is K.PET_DOUBLE_CLICK:
+            emo.on_click()
+        elif ev.kind is K.PET_LONG_PRESS:
+            emo.on_petting(True)
+        elif ev.kind is K.PET_LONG_RELEASE:
+            emo.on_petting(False)
+            emo.add_valence(0.25)  # a finished petting session feels good
+        elif ev.kind is K.MOUSE_APPROACH:
+            emo.add_valence(-0.18)
+        elif ev.kind is K.OBJECT_APPEAR:
+            emo.add_valence({"food": 0.25, "rival": -0.35, "toy": 0.1}.get(ev.cls, 0.05))
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -135,6 +169,9 @@ def make_app(runner: BrainRunner) -> web.Application:
                         continue
                     mtype = data.get("type")
                     if mtype == "sensory_event":
+                        kind = data.get("kind")
+                        if isinstance(kind, str) and kind.startswith("pet_"):
+                            print(f"[flypet] sensory {kind} ts={data.get('ts')}", flush=True)
                         try:
                             runner.feed_event(SensoryEvent.from_message(data))
                         except (KeyError, ValueError):
@@ -151,21 +188,36 @@ def make_app(runner: BrainRunner) -> web.Application:
 
     async def broadcaster(app: web.Application) -> None:
         last_action = None
+        last_expression = None
         while True:
             snap = runner.snapshot()
             payload_rates = {k: round(v, 1) for k, v in snap.get("rates", {}).items()}
+            emotion = snap.get("emotion", {})
+            params = snap.get("params", {})
             action = snap["action"]
             if clients:
                 if action != last_action:
                     state = {"type": "brain_state", "action": action,
                              "avatar": AVATAR_ACTION_MAP.get(action, "idle"),
+                             "expression": emotion.get("expression", "neutral"),
+                             "intensity": params.get("intensity", 0.0),
+                             "params": {"speed": params.get("speed", 0.0),
+                                        "head_angle": params.get("head_angle", 0.0)},
                              "ts": time.time()}
                     await asyncio.gather(*(c.send_json(state) for c in list(clients)),
                                          return_exceptions=True)
                     last_action = action
+                elif emotion.get("expression") != last_expression:
+                    # expression may drift while the action holds
+                    await asyncio.gather(*(c.send_json(
+                        {"type": "brain_emotion", **emotion, "ts": time.time()}
+                    ) for c in list(clients)), return_exceptions=True)
+                last_expression = emotion.get("expression")
                 telemetry = {"type": "brain_telemetry", "action": action,
                              "rates": payload_rates, "fired": snap["fired"],
                              "stim": snap.get("stim", {}),
+                             "emotion": emotion,
+                             "params": params,
                              "sim_t": round(snap["sim_t"], 3),
                              "steps_per_s": round(snap["steps_per_s"], 1),
                              "load": round(snap["load"], 3),
@@ -229,9 +281,11 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--free-run", action="store_true",
                         help="step as fast as possible instead of pacing to 50 Hz")
+    parser.add_argument("--speculative", action="store_true",
+                        help="enable speculative drives/actions (GROOM, WING_DISPLAY, TURN_AWAY)")
     args = parser.parse_args()
 
-    runner = BrainRunner(args.backend, pace=not args.free_run)
+    runner = BrainRunner(args.backend, pace=not args.free_run, speculative=args.speculative)
     runner.start()
     print(f"[flypet] brain-service on ws://{args.host}:{args.port}/ws (backend={args.backend})")
     web.run_app(make_app(runner), host=args.host, port=args.port, print=None)

@@ -23,6 +23,16 @@ RESPONSE = {
     "touch_L": ("DNg100", 18.0, 0.90),
     "touch_R": ("DNg100", 18.0, 0.90),
     "odor": ("MDN", 14.0, 0.95),
+    "threat_L": ("pIP10_L", 22.0, 0.92),
+    "threat_R": ("pIP10_R", 22.0, 0.92),
+    "display_L": ("DNp10_L", 20.0, 0.90),
+    "display_R": ("DNp10_R", 20.0, 0.90),
+    "retreat_L": ("MDN", 20.0, 0.92),
+    "retreat_R": ("MDN", 12.0, 0.92),
+    "groom_L": ("DNg01", 20.0, 0.90),
+    "groom_R": ("DNg01", 12.0, 0.90),
+    "turnaway_L": ("DNa03_L", 16.0, 0.92),
+    "turnaway_R": ("DNa03_R", 16.0, 0.92),
 }
 
 
@@ -34,13 +44,13 @@ class MockBackend(BrainBackend):
 
         self._rng = random.Random(seed)
         self._drive: dict[str, float] = {k: 0.0 for k in RESPONSE}
-        self._rates = {k: 3.0 for k in DN_CHANNELS}
+        self._rates = {k: 2.0 for k in DN_CHANNELS}
         self._sim_t = 0.0
         self._saved = None
 
     def reset(self) -> None:
         self._drive = {k: 0.0 for k in RESPONSE}
-        self._rates = {k: 3.0 for k in DN_CHANNELS}
+        self._rates = {k: 2.0 for k in DN_CHANNELS}
         self._sim_t = 0.0
 
     def step(self, stimuli: list[tuple[str, float]]) -> StepInfo:
@@ -50,15 +60,13 @@ class MockBackend(BrainBackend):
                 self._drive[channel] = max(self._drive[channel], strength)
         for channel, (dn, amp, decay) in RESPONSE.items():
             self._drive[channel] *= decay
-        self._rates = {k: max(2.0, r * 0.90) for k, r in self._rates.items()}
+        self._rates = {k: max(1.5, r * 0.90) for k, r in self._rates.items()}
         for channel, (dn, amp, _decay) in RESPONSE.items():
             self._rates[dn] += self._drive[channel] * amp
             # a touch of cross-talk so the decoder has to discriminate
             other = "DNa02_R" if dn == "DNa02_L" else "DNa02_L"
             if dn.startswith("DNa02"):
                 self._rates[other] += self._drive[channel] * amp * 0.15
-        if "odor" in self._drive:
-            self._rates["DNg100"] += self._drive["odor"] * 8.0
         self._sim_t += DT
         return StepInfo(sim_t=self._sim_t, wall_dt=time.perf_counter() - t0,
                         fired=int(sum(self._rates.values()) * DT))

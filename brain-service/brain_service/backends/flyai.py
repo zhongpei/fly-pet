@@ -13,7 +13,9 @@ import numpy as np
 from ..backend import BrainActivity, BrainBackend, StepInfo, empty_activity
 from ..protocol import DN_CHANNELS
 
-# channel -> (cell types, side); side "C" means both sides pooled
+# channel -> (cell types, side); side "C" means both sides pooled.
+# threat/display/retreat/groom/turnaway are internal drives injected straight
+# into calibrated named command neurons (scripts/calibrate_channels.py).
 CHANNEL_TYPES: dict[str, tuple[list[str], str]] = {
     "chase_L": (["LC10a"], "L"),
     "chase_R": (["LC10a"], "R"),
@@ -22,6 +24,16 @@ CHANNEL_TYPES: dict[str, tuple[list[str], str]] = {
     "touch_L": (["mechano"], "L"),
     "touch_R": (["mechano"], "R"),
     "odor": (["ORN"], "C"),
+    "threat_L": (["pIP10"], "L"),
+    "threat_R": (["pIP10"], "R"),
+    "display_L": (["DNp10"], "L"),
+    "display_R": (["DNp10"], "R"),
+    "retreat_L": (["MDN"], "L"),
+    "retreat_R": (["MDN"], "R"),
+    "groom_L": (["DNg01", "DNg09"], "L"),
+    "groom_R": (["DNg01", "DNg09"], "R"),
+    "turnaway_L": (["DNa03"], "L"),
+    "turnaway_R": (["DNa03"], "R"),
 }
 
 # tracked descending populations: DN channel -> (types, side)
@@ -30,7 +42,15 @@ DN_TYPES: dict[str, tuple[list[str], str]] = {
     "DNp01_R": (["DNp01"], "R"),
     "DNa02_L": (["DNa02"], "L"),
     "DNa02_R": (["DNa02"], "R"),
+    "DNa03_L": (["DNa03"], "L"),
+    "DNa03_R": (["DNa03"], "R"),
+    "DNp10_L": (["DNp10"], "L"),
+    "DNp10_R": (["DNp10"], "R"),
+    "pIP10_L": (["pIP10"], "L"),
+    "pIP10_R": (["pIP10"], "R"),
     "DNg100": (["DNg100"], None),
+    "DNg01": (["DNg01"], None),
+    "DNg09": (["DNg09"], None),
     "MDN": (["MDN"], None),
 }
 

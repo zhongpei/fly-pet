@@ -7,6 +7,13 @@ const AVATAR_TO_STATE = {
     look: { state: 'review' },
     waving: { state: 'waving' },
     sleep: { state: 'failed', interval: 380 },
+    jump: { state: 'jumping', interval: 110 },
+    back: { state: 'running', interval: 260 },
+    threat: { state: 'waving', interval: 70 },
+    display: { state: 'waving', interval: 260 },
+    groom: { state: 'review', interval: 220 },
+    turn_away: { state: 'idle', interval: 1200 },
+    wander: { state: 'running', interval: 240 },
 };
 export class SpriteAvatar {
     constructor(el) {
@@ -19,14 +26,15 @@ export class SpriteAvatar {
         this.acc = 0;
         this.lastT = 0;
         this.ready = false;
+        this.params = { speed: 0, head_angle: 0 };
     }
-    async load(baseUrl) {
-        const char = await this.loadJson(baseUrl);
+    async load() {
+        const char = await this.loadJson('flypet/assets/');
         this.char = char;
         await new Promise((resolve, reject) => {
             this.img.onload = () => resolve();
             this.img.onerror = () => reject(new Error(`sprite load failed: ${this.img.src}`));
-            this.img.src = `${baseUrl}${char.sprite}`;
+            this.img.src = `flypet/assets/${char.sprite}`;
         });
         this.ready = true;
         this.setAction('idle');
@@ -58,14 +66,20 @@ export class SpriteAvatar {
             return;
         const mapping = AVATAR_TO_STATE[avatar] ?? AVATAR_TO_STATE.idle;
         const st = this.char.states[mapping.state] ?? this.char.states.idle;
-        const interval = mapping.interval ?? st.interval;
-        if (mapping.state === this.stateName && interval === this.interval)
+        const tempo = 1 - Math.min(0.5, (this.params.speed || 0) * 0.5);
+        const interval = (mapping.interval ?? st.interval) * (avatar === 'walk' || avatar === 'run' ? tempo : 1);
+        if (mapping.state === this.stateName && Math.abs(interval - this.interval) < 4)
             return;
         this.stateName = mapping.state;
         this.interval = interval;
         this.frame = 0;
         this.acc = 0;
         this.apply();
+    }
+    setExpression(_expr, _arousal, _valence) {
+    }
+    setParams(params) {
+        this.params = params;
     }
     apply() {
         if (!this.char)

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:" />
+        content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:" />
   <title>FlyPet</title>
   <style>
     html, body {
@@ -15,6 +15,8 @@
       position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
       height: 96vh; image-rendering: auto;
     }
+    #live2d { position: absolute; inset: 0; }
+    #live2d canvas { position: absolute; inset: 0; }
     #drag-strip {
       position: absolute; left: 25%; top: 0; width: 50%; height: 12%;
       -webkit-app-region: drag;
@@ -30,8 +32,13 @@
 </head>
 <body>
   <img id="pet" alt="pet" draggable="false" />
+  <div id="live2d"></div>
   <div id="drag-strip"></div>
   <div id="hud">connecting…</div>
+  <!-- Live2D stack (only used when ?avatar=live2d) -->
+  <script src="lib/pixi.min.js"></script>
+  <script src="lib/live2dcubismcore.min.js"></script>
+  <script src="lib/pixi-live2d-cubism4.min.js"></script>
   <script type="module" src="js/flypet/flypet.js"></script>
 </body>
 </html>

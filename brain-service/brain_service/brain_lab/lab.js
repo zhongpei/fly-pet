@@ -11,7 +11,10 @@ window.addEventListener('error', (e) => {
 const DN_COLORS = {
   DNp01_L: 0xff5252, DNp01_R: 0xff8a52,
   DNa02_L: 0x53c7ff, DNa02_R: 0x53a8ff,
-  DNg100: 0x7dff6e, MDN: 0xc07dff,
+  DNa03_L: 0x40e0d0, DNa03_R: 0x36cbbf,
+  DNp10_L: 0xe91e91, DNp10_R: 0xd81b6a,
+  pIP10_L: 0xff2b2b, pIP10_R: 0xff6e40,
+  DNg100: 0x7dff6e, DNg01: 0xffd740, DNg09: 0xc6ff6e, MDN: 0xc07dff,
 };
 const CH_COLORS = {
   chase_L: 0xffe066, chase_R: 0xffd21e,
@@ -175,7 +178,11 @@ function connect() {
       for (const [k, v] of Object.entries(msg.stim ?? {})) {
         if (popPoints[`ch:${k}`]) glow[`ch:${k}`] = Math.min(1.2, v * 1.1);
       }
-      document.getElementById('action').textContent = `${msg.action}  ·  ${msg.steps_per_s} steps/s`;
+      document.getElementById('action').textContent =
+        `${msg.action}  ·  ${msg.steps_per_s} steps/s`;
+      const emo = msg.emotion ?? {};
+      document.getElementById('emotion').textContent =
+        `emotion ${emo.expression ?? '—'} · val ${(emo.valence ?? 0).toFixed(2)} · aro ${(emo.arousal ?? 0).toFixed(2)}`;
       document.getElementById('err').textContent = msg.error ?? '';
     }
   };

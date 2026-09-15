@@ -3,10 +3,9 @@
 Follows fly.ai's own approach (docs/dev.md section 10): no screenshots, no
 vision stack; semantic desktop events drive feature-detector populations.
 
-    mouse sits left of the pet        -> LC10a left   (chase_L)
-    mouse closes in fast              -> LC4 + LPLC2  (loom_L / loom_R)
-    pet clicked                       -> touch populations
-    virtual object present            -> ORN population (odour)
+V1 additions: startle (double click), petting (long press), object classes
+(food / rival / toy modulate the odour channel), keyboard curiosity.
+Internal drives (threat/groom/...) come from the emotion engine, not here.
 """
 from __future__ import annotations
 
@@ -23,11 +22,21 @@ class SensoryConfig:
     loom_speed: float = 350.0        # px/s of closing speed that counts as looming
     loom_strength: float = 0.85
     loom_hold: float = 0.25          # seconds a looming pulse stays hot
+    startle_strength: float = 1.0    # double click: sharp bilateral DNp01 pulse
+    startle_hold: float = 0.12
     touch_strength: float = 0.9
     touch_hold: float = 0.12
     touch_refractory: float = 0.5
-    odor_strength: float = 0.6
+    petting_strength: float = 0.45   # sustained while long-pressed
+    keyboard_strength: float = 0.3
+    keyboard_hold: float = 2.0
+    odor_strength: float = 0.6       # default; per-class overrides below
+    odor_class_strength: dict = None  # {food: 0.5, rival: 0.9, toy: 0.3}
     chase_memory: float = 2.5        # seconds the decoder may keep "mouse seen" alive
+
+    def __post_init__(self):
+        if self.odor_class_strength is None:
+            self.odor_class_strength = {"food": 0.5, "rival": 0.9, "toy": 0.3}
 
 
 class SensoryEncoder:
@@ -41,9 +50,14 @@ class SensoryEncoder:
         self._loom_side = "C"
         self._loom_until = -1e9
         self._loom_strength = 0.0
+        self._startle_until = -1e9
         self._touch_until = -1e9
         self._last_touch_at = -1e9
+        self._petting = False
+        self._keyboard_until = -1e9
         self._odor_on = False
+        self._odor_strength = self.cfg.odor_strength
+        self._object_cls = ""
         self._last_event_at = -1e9
 
     def feed(self, ev: SensoryEvent) -> None:
@@ -57,16 +71,27 @@ class SensoryEncoder:
             self._loom_side = ev.side if ev.side in ("L", "R") else self._mouse_side
             self._loom_until = now() + cfg.loom_hold
             self._loom_strength = cfg.loom_strength * max(0.4, min(1.5, ev.speed / cfg.loom_speed))
+        elif ev.kind is SensoryKind.PET_DOUBLE_CLICK:
+            self._startle_until = now() + cfg.startle_hold
         elif ev.kind is SensoryKind.PET_CLICK:
             if now() - self._last_touch_at >= cfg.touch_refractory:
                 self._touch_until = now() + cfg.touch_hold
                 self._last_touch_at = now()
+        elif ev.kind is SensoryKind.PET_LONG_PRESS:
+            self._petting = True
+        elif ev.kind is SensoryKind.PET_LONG_RELEASE:
+            self._petting = False
         elif ev.kind is SensoryKind.PET_DRAG:
             self._touch_until = now() + cfg.touch_hold
         elif ev.kind is SensoryKind.OBJECT_APPEAR:
             self._odor_on = True
+            self._object_cls = ev.cls
+            self._odor_strength = cfg.odor_class_strength.get(ev.cls, cfg.odor_strength)
         elif ev.kind is SensoryKind.OBJECT_REMOVE:
             self._odor_on = False
+            self._object_cls = ""
+        elif ev.kind is SensoryKind.KEYBOARD_ACTIVITY:
+            self._keyboard_until = now() + cfg.keyboard_hold
 
     # ---- per-step output -------------------------------------------------
 
@@ -81,6 +106,10 @@ class SensoryEncoder:
             side = self._mouse_side if self._mouse_side in ("L", "R") else ("L" if (self._mouse_x or 0) < 0 else "R")
             out.append((f"chase_{side}", strength))
 
+        if t < self._startle_until:
+            out.append(("loom_L", cfg.startle_strength))
+            out.append(("loom_R", cfg.startle_strength))
+
         if t < self._loom_until:
             side = self._loom_side if self._loom_side in ("L", "R") else "L"
             out.append((f"loom_{side}", self._loom_strength))
@@ -88,12 +117,23 @@ class SensoryEncoder:
         if t < self._touch_until:
             out.append(("touch_L", cfg.touch_strength))
             out.append(("touch_R", cfg.touch_strength))
+        elif self._petting:
+            out.append(("touch_L", cfg.petting_strength))
+            out.append(("touch_R", cfg.petting_strength))
+
+        if t < self._keyboard_until:
+            out.append(("chase_L", cfg.keyboard_strength))
+            out.append(("chase_R", cfg.keyboard_strength))
 
         if self._odor_on:
-            out.append(("odor", cfg.odor_strength))
+            out.append(("odor", self._odor_strength))
         return out
 
-    # ---- context for the decoder ----------------------------------------
+    def sensory_energy(self) -> float:
+        """0..1 total drive energy, for the arousal estimate."""
+        return min(1.0, sum(s for _ch, s in self.stimuli()) / 1.5)
+
+    # ---- context for the decoder / emotion --------------------------------
 
     def mouse_recent(self, within: float | None = None) -> bool:
         return now() - self._mouse_seen_at < (within or self.cfg.chase_memory)
@@ -103,6 +143,12 @@ class SensoryEncoder:
 
     def recent_touch(self, within: float = 2.0) -> bool:
         return now() - self._last_touch_at < within
+
+    def petting(self) -> bool:
+        return self._petting
+
+    def object_class(self) -> str:
+        return self._object_cls if self._odor_on else ""
 
     def desktop_quiet_since(self) -> float:
         return now() - self._last_event_at
