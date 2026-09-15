@@ -6,6 +6,8 @@
 export interface AvatarParams {
   speed: number;      // 0..1 forward-walking rate
   head_angle: number; // -25..25 deg, from DNa02 asymmetry
+  moving?: boolean;   // true while the window is being walked (from the walker)
+  vx?: number;        // walk velocity px/s, sign = direction
 }
 
 export interface AvatarProvider {

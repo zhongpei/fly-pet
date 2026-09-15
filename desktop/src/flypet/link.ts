@@ -70,7 +70,11 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
         getWindow()?.webContents.send('flypet:action', {
           action: msg.action, avatar: msg.avatar,
           expression: (msg as { expression?: string }).expression,
-          params: (msg as { params?: unknown }).params,
+          params: {
+            ...(msg as { params?: Record<string, number> }).params,
+            moving: walkVx !== 0,          // window is being walked right now
+            vx: walkVx,                    // px/s, sign = direction
+          },
         });
       } else if (msg.type === 'brain_telemetry') {
         getWindow()?.webContents.send('flypet:telemetry', msg);

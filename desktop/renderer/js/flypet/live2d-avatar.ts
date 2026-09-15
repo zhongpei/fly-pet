@@ -138,19 +138,16 @@ export class Live2DAvatar implements AvatarProvider {
     };
     const t = performance.now() / 1000;
 
-    // idle life: blink, breath, gentle sway when the brain is not steering
-    const blink = this.blinkValue(t);
-    set('head_turn_x', this.params.head_angle + (1 - this.arousal) * 3.5 * Math.sin(t * 0.7));
-    set('gaze_x', this.params.head_angle / 25);
-    set('head_turn_y', 2.0 * Math.sin(t * 0.5 + 1.3) * (1 - this.arousal * 0.7));
-    set('breath', 0.5 + 0.4 * Math.sin(t * 2.1));   // ParamBreath if the model has it
-    if (this.expr === 'content' && this.valence > 0.5) set('head_tilt', 3); // sweet spot
+    this.applyWalk(t);
+    this.applyIdleLife(t, set);
+
     const preset = expressionParams(this.expr);
     for (const [alias, value] of Object.entries(preset)) set(alias, value);
+    const blink = this.blink;
     if (blink < 1) {
       // blinks override whatever the expression preset says about the eyes
-      set('left_eye_open', Math.min(valueOf(preset, 'left_eye_open', 0.75 + 0.25 * this.arousal), blink));
-      set('right_eye_open', Math.min(valueOf(preset, 'right_eye_open', 0.75 + 0.25 * this.arousal), blink));
+      set('left_eye_open', Math.min(valueOf(preset, 'left_eye_open', 0.75 + 0.25 * this.arousal), this.blink));
+      set('right_eye_open', Math.min(valueOf(preset, 'right_eye_open', 0.75 + 0.25 * this.arousal), this.blink));
     } else if (this.expr === 'neutral') {
       const open = 0.75 + 0.25 * this.arousal;
       set('left_eye_open', open);
@@ -158,8 +155,35 @@ export class Live2DAvatar implements AvatarProvider {
     }
   }
 
-  /** 1 = open, ~0.05 = closed; 1 most of the time, dips ~240 ms every 2-6 s. */
-  private blinkValue(t: number): number {
+  /**
+   * Walking read: bob + lean synced to the window's real velocity. The model
+   * has no directional walk cycle, so the bounce carries the "steps".
+   */
+  private applyWalk(t: number): void {
+    const moving = this.params.moving === true;
+    const h = this.container.clientHeight || 470;
+    if (!moving) {
+      this.model.rotation = 0;
+      this.model.y = h;
+      return;
+    }
+    const speed = Math.max(0.15, Math.min(1, this.params.speed || 0.4));
+    const rate = 5.5 + 7 * speed;                        // steps per second
+    const bob = Math.abs(Math.sin(t * rate * Math.PI));
+    this.model.y = h - bob * h * (0.015 + 0.025 * speed);
+    this.model.rotation = Math.sign(this.params.vx || 1) * (0.03 + 0.04 * speed);
+  }
+
+  private applyIdleLife(t: number, set: (alias: string, value: number) => void): void {
+    set('head_turn_x', this.params.head_angle + (1 - this.arousal) * 3.5 * Math.sin(t * 0.7));
+    set('gaze_x', this.params.head_angle / 25);
+    set('head_turn_y', 2.0 * Math.sin(t * 0.5 + 1.3) * (1 - this.arousal * 0.7));
+    set('breath', 0.5 + 0.4 * Math.sin(t * 2.1));   // ParamBreath if the model has it
+    if (this.expr === 'content' && this.valence > 0.5) set('head_tilt', 3); // sweet spot
+  }
+
+  private get blink(): number {
+    const t = performance.now() / 1000;
     if (this.expr === 'sleepy') return 1; // sleepy keeps its preset lids
     if (t < this._nextBlink) return 1;
     const phase = (t - this._nextBlink) / 0.24;
