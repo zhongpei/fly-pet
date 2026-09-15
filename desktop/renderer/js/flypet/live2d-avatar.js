@@ -145,7 +145,7 @@ export class Live2DAvatar {
         const speed = Math.max(0.15, Math.min(1, this.params.speed || 0.4));
         const rate = 5.5 + 7 * speed;
         const bob = Math.abs(Math.sin(t * rate * Math.PI));
-        this.model.y = h - bob * h * (0.015 + 0.025 * speed);
+        this.model.y = h - bob * h * (0.02 + 0.035 * speed);
         this.model.rotation = Math.sign(this.params.vx || 1) * (0.03 + 0.04 * speed);
     }
     applyIdleLife(t, set) {

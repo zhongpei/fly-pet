@@ -15,8 +15,7 @@
       position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
       height: 96vh; image-rendering: auto;
     }
-    #live2d { position: absolute; inset: 0; }
-    #live2d canvas { position: absolute; inset: 0; }
+    #live2d-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
     #drag-strip {
       position: absolute; left: 25%; top: 0; width: 50%; height: 12%;
       -webkit-app-region: drag;
@@ -32,10 +31,10 @@
 </head>
 <body>
   <img id="pet" alt="pet" draggable="false" />
-  <div id="live2d"></div>
+  <canvas id="live2d-canvas"></canvas>
   <div id="drag-strip"></div>
   <div id="hud">connecting…</div>
-  <!-- Live2D stack (only used when ?avatar=live2d) -->
+  <!-- Live2D pipeline stack: pixi + Cubism runtime + pixi-live2d-display (NyaDeskPet) -->
   <script src="lib/pixi.min.js"></script>
   <script src="lib/live2dcubismcore.min.js"></script>
   <script src="lib/pixi-live2d-cubism4.min.js"></script>

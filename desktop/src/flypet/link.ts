@@ -34,6 +34,8 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
   let linkConnected = false;
   let backendName = '';
   let previousAction = '';
+  let lastWalkSpeed = 0.4;     // DNg100-derived 0..1, matches the model's bob rate
+  let moveAccum = 0;
 
   const status = (s: Record<string, unknown>) => {
     if ('connected' in s) linkConnected = Boolean(s.connected);
@@ -93,6 +95,7 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
 
   const onAction = (action: string, params?: { speed?: number }) => {
     const speed = Math.max(0, Math.min(1, params?.speed ?? 0));
+    lastWalkSpeed = speed;
     if (action === 'APPROACH') {
       walkVx = (lastX < 0 ? -1 : lastX > 0 ? 1 : 0) * (120 + 200 * speed); // walk toward the cursor
     } else if (action === 'AVOID' || action === 'JUMP') {
@@ -113,9 +116,15 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
     }
   };
 
+  /**
+   * Step-quantised walking: the window does NOT glide. Displacement is
+   * delivered in discrete chunks at the same steps-per-second rate as the
+   * model's bob (5.5 + 7*speed Hz), so each bob landing is one visible step.
+   */
   const step = () => {
     const win = getWindow();
     if (!win || walkVx === 0) {
+      moveAccum = 0;
       if (walkerTimer !== null) {
         clearInterval(walkerTimer);
         walkerTimer = null;
@@ -124,16 +133,26 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
     }
     const bounds = win.getBounds();
     const display = screen.getDisplayMatching(bounds).workArea;
-    const nx = Math.max(display.x, Math.min(display.x + display.width - bounds.width, bounds.x + Math.round(walkVx * 0.033)));
-    if (nx !== bounds.x) {
-      win.setPosition(nx, bounds.y);
-      lastSelfMove = Date.now();  // walking is not the user dragging the pet
-    }
-    if (nx === display.x || nx === display.x + display.width - bounds.width) {
-      walkVx = 0; // reached the edge; keep the animation but stop moving
-      if (walkerTimer !== null) {
-        clearInterval(walkerTimer);
-        walkerTimer = null;
+    const speed = Math.max(0.15, Math.min(1, lastWalkSpeed));
+    const stepsPerSec = 5.5 + 7 * speed;
+    const pxPerSec = Math.abs(walkVx);
+    moveAccum += pxPerSec * 0.033;
+    const stepPx = Math.max(6, pxPerSec / stepsPerSec);
+    if (moveAccum >= stepPx) {
+      const nx = Math.max(display.x, Math.min(display.x + display.width - bounds.width,
+          bounds.x + Math.round(Math.sign(walkVx) * stepPx)));
+      if (nx !== bounds.x) {
+        win.setPosition(nx, bounds.y);
+        lastSelfMove = Date.now();
+      }
+      moveAccum -= stepPx;
+      if (nx === display.x || nx === display.x + display.width - bounds.width) {
+        walkVx = 0; // reached the edge; keep the animation but stop stepping
+        moveAccum = 0;
+        if (walkerTimer !== null) {
+          clearInterval(walkerTimer);
+          walkerTimer = null;
+        }
       }
     }
   };

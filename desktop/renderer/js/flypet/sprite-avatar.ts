@@ -5,7 +5,7 @@
  * Implements the AvatarProvider contract; expression/params are V1 no-ops
  * except speed -> animation tempo (Live2D carries the full expression layer).
  */
-import type { AvatarParams, AvatarProvider } from './avatar';
+import type { AvatarParams, AvatarProvider } from './avatar.js';
 
 export interface CharacterJson {
   sprite: string;

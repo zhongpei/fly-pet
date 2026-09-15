@@ -1,20 +1,23 @@
 import { SpriteAvatar } from './sprite-avatar.js';
-import { Live2DAvatar } from './live2d-avatar.js';
+import { ManagedLive2DAvatar } from './avatar-live2d.js';
 const hud = document.getElementById('hud');
 const petEl = document.getElementById('pet');
-const live2dHost = document.getElementById('live2d');
+const live2dCanvas = document.getElementById('live2d-canvas');
 const bridge = window.electronAPI?.flypet;
 const wantSprite = new URLSearchParams(location.search).get('avatar') === 'sprite';
 let avatar;
 if (wantSprite) {
-    live2dHost.style.display = 'none';
+    live2dCanvas.style.display = 'none';
     avatar = new SpriteAvatar(petEl);
 }
 else {
     petEl.style.display = 'none';
-    avatar = new Live2DAvatar(live2dHost);
+    avatar = new ManagedLive2DAvatar(live2dCanvas);
 }
+window.flypetTap = () => bridge?.tap();
+window.__avatar = avatar;
 avatar.load().catch((err) => {
+    window.__flypetLoadError = err.message;
     hud.textContent = `avatar load failed: ${err.message}`;
 });
 let lastClickAt = 0;
@@ -23,7 +26,7 @@ let pointerDown = false;
 let petting = false;
 let suppressClick = false;
 function bindTouch(el) {
-    el.addEventListener('pointerdown', () => {
+    el.addEventListener('pointerdown', (e) => {
         pointerDown = true;
         downAt = Date.now();
         suppressClick = false;
@@ -34,6 +37,7 @@ function bindTouch(el) {
                 bridge?.sensory('pet_long_press');
             }
         }, 600);
+        void e;
     });
     const release = () => {
         pointerDown = false;
@@ -44,10 +48,15 @@ function bindTouch(el) {
     };
     el.addEventListener('pointerup', release);
     el.addEventListener('pointercancel', release);
-    el.addEventListener('click', () => {
+    el.addEventListener('click', (e) => {
         if (suppressClick)
             return;
         bridge?.tap();
+        if (!wantSprite) {
+            const me = e;
+            window
+                .live2dManager?.tap(me.offsetX, me.offsetY);
+        }
         const t = Date.now();
         if (t - lastClickAt < 350) {
             bridge?.sensory('pet_double_click');
@@ -58,7 +67,7 @@ function bindTouch(el) {
         }
     });
 }
-bindTouch(wantSprite ? petEl : live2dHost);
+bindTouch(wantSprite ? petEl : live2dCanvas);
 let lastAction = '';
 let lastExpression = '';
 let backend = '';

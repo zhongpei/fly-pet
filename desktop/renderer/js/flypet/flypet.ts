@@ -1,15 +1,15 @@
 /**
- * FlyPet sprite/Live2D page: renders the avatar, forwards touch events,
+ * FlyPet page: renders the avatar through the copied NyaDeskPet Live2D
+ * pipeline (default) or the sprite fallback, forwards touch events,
  * receives actions + expressions + continuous params.
- * Talks to the main process over the electronAPI.flypet IPC bridge.
  */
-import type { AvatarParams, AvatarProvider } from './avatar';
+import type { AvatarParams, AvatarProvider } from './avatar.js';
 import { SpriteAvatar } from './sprite-avatar.js';
-import { Live2DAvatar } from './live2d-avatar.js';
+import { ManagedLive2DAvatar } from './avatar-live2d.js';
 
 const hud = document.getElementById('hud') as HTMLDivElement;
 const petEl = document.getElementById('pet') as HTMLImageElement;
-const live2dHost = document.getElementById('live2d') as HTMLDivElement;
+const live2dCanvas = document.getElementById('live2d-canvas') as HTMLCanvasElement;
 
 const bridge = (window as unknown as {
   electronAPI?: { flypet?: {
@@ -24,23 +24,30 @@ const bridge = (window as unknown as {
 
 // ---- avatar provider selection ---------------------------------------------
 
-// default is Live2D (richer expression layer); ?avatar=sprite keeps the fallback
+// default is the Live2D pipeline; ?avatar=sprite keeps the lightweight fallback
 const wantSprite = new URLSearchParams(location.search).get('avatar') === 'sprite';
 let avatar: AvatarProvider;
 if (wantSprite) {
-  live2dHost.style.display = 'none';
+  live2dCanvas.style.display = 'none';
   avatar = new SpriteAvatar(petEl);
 } else {
   petEl.style.display = 'none';
-  avatar = new Live2DAvatar(live2dHost);
+  avatar = new ManagedLive2DAvatar(live2dCanvas);
 }
+
+// model taps reported by the live2d-manager pipeline (hit areas) land here
+(window as unknown as { flypetTap?: () => void }).flypetTap = () => bridge?.tap();
+(window as unknown as { __avatar?: AvatarProvider & { started?: boolean } }).__avatar = avatar;
+
 avatar.load().catch((err: Error) => {
+  (window as unknown as { __flypetLoadError?: string }).__flypetLoadError = err.message;
   hud.textContent = `avatar load failed: ${err.message}`;
 });
 
 // ---- touch -> sensory events ------------------------------------------------
-// Handlers go on the VISIBLE container: in Live2D mode the sprite <img> is
-// display:none and would never receive real pointer events.
+// Handlers bind to the VISIBLE container. In Live2D mode a click also goes to
+// live2dManager.tap for hit-area animation; the encoder's touch refractory
+// dedupes the two reporting paths (manager tap_event + our own tap).
 
 // single click = poke; two quick clicks = startle; hold >= 600 ms = petting
 let lastClickAt = 0;
@@ -50,7 +57,7 @@ let petting = false;
 let suppressClick = false;
 
 function bindTouch(el: HTMLElement): void {
-  el.addEventListener('pointerdown', () => {
+  el.addEventListener('pointerdown', (e) => {
     pointerDown = true;
     downAt = Date.now();
     suppressClick = false;
@@ -63,6 +70,7 @@ function bindTouch(el: HTMLElement): void {
         bridge?.sensory('pet_long_press');
       }
     }, 600);
+    void e;
   });
   const release = () => {
     pointerDown = false;
@@ -73,9 +81,15 @@ function bindTouch(el: HTMLElement): void {
   };
   el.addEventListener('pointerup', release);
   el.addEventListener('pointercancel', release);
-  el.addEventListener('click', () => {
+  el.addEventListener('click', (e) => {
     if (suppressClick) return;
     bridge?.tap();
+    // Live2D: let the manager play its hit-area reaction for this tap
+    if (!wantSprite) {
+      const me = e as MouseEvent;
+      (window as unknown as { live2dManager?: { tap: (x: number, y: number) => void } })
+        .live2dManager?.tap(me.offsetX, me.offsetY);
+    }
     const t = Date.now();
     if (t - lastClickAt < 350) {
       bridge?.sensory('pet_double_click');
@@ -85,7 +99,7 @@ function bindTouch(el: HTMLElement): void {
     }
   });
 }
-bindTouch(wantSprite ? petEl : live2dHost);
+bindTouch(wantSprite ? petEl : live2dCanvas);
 
 // ---- brain output -----------------------------------------------------------
 
