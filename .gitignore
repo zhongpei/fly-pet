@@ -1,0 +1,15 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 参考仓库（外部克隆，只读参考，不入库）
+references/
+
+# 桌面端构建产物与依赖（NyaDeskPet fork）
+desktop/node_modules/
+desktop/dist/
+
+# 系统
+.DS_Store

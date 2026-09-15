@@ -1,0 +1,28 @@
+[project]
+name = "flypet"
+version = "0.1.0"
+description = "Desktop pet driven by the full Drosophila MaleCNS connectome (166,700 neurons)"
+requires-python = ">=3.12"
+dependencies = [
+    "flybrain>=0.1.0",
+    "websockets>=13",
+    "aiohttp>=3.10",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["brain-service/brain_service"]
+
+[project.scripts]
+flypet-serve = "brain_service.server:main"
+
+[tool.pytest.ini_options]
+testpaths = ["brain-service/tests"]

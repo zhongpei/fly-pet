@@ -1,0 +1,433 @@
+/**
+ * 音频播放器
+ * 负责播放语音和音效
+ */
+
+import type { AudioPlayer as IAudioPlayer } from '../types/global';
+
+class AudioPlayer implements IAudioPlayer {
+  public audioContext: AudioContext | null;
+  public currentAudio: HTMLAudioElement | null;
+  public isPlaying: boolean;
+  public volume: number;
+  private analyser: AnalyserNode | null;
+  private dataArray: Uint8Array | null;
+  private lipSyncInterval: number | null;
+  
+  // 流式音频相关
+  private mediaSource: MediaSource | null;
+  private sourceBuffer: SourceBuffer | null;
+  private audioQueue: Uint8Array[];
+  private isStreamMode: boolean;
+  private timelineCallbacks: Array<{trigger: number, callback: () => void}>;
+  private timelineTimers: number[];
+
+  constructor() {
+    this.audioContext = null;
+    this.currentAudio = null;
+    this.isPlaying = false;
+    this.volume = 0.8;
+    this.analyser = null;
+    this.dataArray = null;
+    this.lipSyncInterval = null;
+    this.mediaSource = null;
+    this.sourceBuffer = null;
+    this.audioQueue = [];
+    this.isStreamMode = false;
+    this.timelineCallbacks = [];
+    this.timelineTimers = [];
+    this.initAudioContext();
+  }
+
+  /**
+   * 初始化音频上下文
+   */
+  public initAudioContext(): void {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      this.audioContext = new AudioContextClass();
+      window.logger.info('音频上下文初始化成功');
+    } catch (error) {
+      window.logger.error('音频上下文初始化失败:', error);
+    }
+  }
+
+  /**
+   * 暂停播放
+   */
+  public pause(): void {
+    if (this.currentAudio && this.isPlaying) {
+      this.currentAudio.pause();
+      this.isPlaying = false;
+    }
+  }
+
+  /**
+   * 停止播放
+   */
+  public stop(): void {
+    this.clearTimeline();
+    this.stopLipSync();
+    
+    // 断开 AnalyserNode
+    if (this.analyser) {
+      try { this.analyser.disconnect(); } catch { /* ignore */ }
+      this.analyser = null;
+      this.dataArray = null;
+    }
+    
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio.src = '';
+      this.currentAudio = null;
+    }
+    
+    if (this.mediaSource) {
+      if (this.mediaSource.readyState === 'open') {
+        this.mediaSource.endOfStream();
+      }
+      this.mediaSource = null;
+      this.sourceBuffer = null;
+    }
+    
+    this.audioQueue = [];
+    this.isStreamMode = false;
+    this.isPlaying = false;
+    
+    window.logger.info('音频播放已停止');
+  }
+
+  /**
+   * 恢复播放
+   */
+  public resume(): void {
+    if (this.currentAudio && !this.isPlaying) {
+      this.currentAudio.play().catch(error => {
+        window.logger.error('恢复播放失败:', error);
+      });
+      this.isPlaying = true;
+    }
+  }
+
+  /**
+   * 设置音量
+   */
+  public setVolume(volume: number): void {
+    this.volume = Math.max(0, Math.min(1, volume));
+    if (this.currentAudio) {
+      this.currentAudio.volume = this.volume;
+    }
+    window.logger.info('音量已设置为:', this.volume);
+  }
+
+  /**
+   * 开始口型同步
+   */
+  private startLipSync(): void {
+    if (!this.analyser || !this.dataArray) return;
+    
+    // 清除旧的定时器
+    if (this.lipSyncInterval) {
+      clearInterval(this.lipSyncInterval);
+    }
+    
+    const LIP_SYNC_FPS = 60;
+    // 时域数据以 128 为中心（静音 = 128），偏离 128 的幅度即为波形振幅
+    const TIME_DOMAIN_CENTER = 128;
+    // RMS 归一化阈值：时域偏差的 RMS，语音通常在 20-60 范围
+    const LIP_SYNC_AMPLITUDE_SCALE = 35;
+    // 噪声门限：低于此 RMS 直接归零，避免底噪导致嘴巴微张
+    const LIP_SYNC_NOISE_GATE = 5;
+    
+    // 每帧更新口型
+    this.lipSyncInterval = window.setInterval(() => {
+      if (!this.analyser || !this.dataArray) return;
+      
+      // 使用时域数据：直接反映波形振幅包络，在音节间隙自然降为零
+      // 相比频域数据（持续有能量），时域更能体现吐字节奏
+      this.analyser.getByteTimeDomainData(this.dataArray as unknown as Uint8Array<ArrayBuffer>);
+      
+      // 计算时域 RMS（相对于 128 中心的偏差）
+      let sumOfSquares = 0;
+      for (let i = 0; i < this.dataArray.length; i++) {
+        const deviation = this.dataArray[i] - TIME_DOMAIN_CENTER;
+        sumOfSquares += deviation * deviation;
+      }
+      const rms = Math.sqrt(sumOfSquares / this.dataArray.length);
+      
+      // 噪声门限 + 归一化到 0-1
+      const gated = rms < LIP_SYNC_NOISE_GATE ? 0 : rms;
+      const lipValue = Math.min(gated / LIP_SYNC_AMPLITUDE_SCALE, 1.0);
+      
+      // 更新 Live2D 模型的口型
+      if (window.live2dManager) {
+        window.live2dManager.setLipSync(lipValue);
+      }
+    }, 1000 / LIP_SYNC_FPS);
+  }
+
+  /**
+   * 停止口型同步
+   */
+  private stopLipSync(): void {
+    if (this.lipSyncInterval) {
+      clearInterval(this.lipSyncInterval);
+      this.lipSyncInterval = null;
+    }
+    
+    // 重置口型
+    if (window.live2dManager) {
+      window.live2dManager.stopLipSync();
+    }
+  }
+
+  /**
+   * 获取当前播放状态
+   */
+  public getStatus(): {
+    isPlaying: boolean;
+    volume: number;
+    currentTime: number;
+    duration: number;
+  } {
+    return {
+      isPlaying: this.isPlaying,
+      volume: this.volume,
+      currentTime: this.currentAudio ? this.currentAudio.currentTime : 0,
+      duration: this.currentAudio ? this.currentAudio.duration : 0
+    };
+  }
+
+  /**
+   * 开始流式音频播放
+   * @param mimeType - MIME类型（如 audio/mpeg）
+   */
+  public startStreamingAudio(mimeType: string = 'audio/mpeg'): void {
+    this.stop();
+    this.clearTimeline();
+    
+    this.isStreamMode = true;
+    this.audioQueue = [];
+    
+    // 创建 MediaSource
+    this.mediaSource = new MediaSource();
+    this.currentAudio = new Audio();
+    this.currentAudio.volume = this.volume;
+    this.currentAudio.src = URL.createObjectURL(this.mediaSource);
+
+    // 初始化 AnalyserNode 用于口型同步
+    if (this.audioContext) {
+      try {
+        if (this.audioContext.state === 'suspended') {
+          this.audioContext.resume();
+        }
+        const source = this.audioContext.createMediaElementSource(this.currentAudio);
+        this.analyser = this.audioContext.createAnalyser();
+        this.analyser.fftSize = 256;
+        source.connect(this.analyser);
+        this.analyser.connect(this.audioContext.destination);
+        this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+        window.logger.info('[AudioPlayer] AnalyserNode 已连接，口型同步就绪');
+      } catch (error) {
+        window.logger.warn('[AudioPlayer] AnalyserNode 初始化失败，口型同步不可用:', error);
+        this.analyser = null;
+        this.dataArray = null;
+      }
+    }
+    
+    // 监听 MediaSource 事件
+    this.mediaSource.addEventListener('sourceopen', () => {
+      if (!this.mediaSource) return;
+      
+      try {
+        this.sourceBuffer = this.mediaSource.addSourceBuffer(mimeType);
+        
+        this.sourceBuffer.addEventListener('updateend', () => {
+          this.processQueue();
+        });
+        
+        window.logger.info('[AudioPlayer] 流式播放器就绪');
+      } catch (error) {
+        window.logger.error('[AudioPlayer] 创建 SourceBuffer 失败:', error);
+      }
+    });
+    
+    // 监听播放事件
+    this.currentAudio.onplay = () => {
+      this.isPlaying = true;
+      this.startLipSync();
+      window.logger.info('[AudioPlayer] 流式音频开始播放');
+    };
+    
+    this.currentAudio.onended = () => {
+      this.isPlaying = false;
+      this.stopLipSync();
+      this.clearTimeline();
+      window.logger.info('[AudioPlayer] 流式音频播放结束');
+    };
+    
+    this.currentAudio.onerror = (error) => {
+      window.logger.error('[AudioPlayer] 流式音频错误:', error);
+      this.isPlaying = false;
+      this.stopLipSync();
+    };
+  }
+
+  /**
+   * 追加音频块
+   * @param chunk - 音频数据块
+   */
+  public appendAudioChunk(chunk: Uint8Array): void {
+    if (!this.isStreamMode) {
+      window.logger.warn('[AudioPlayer] 未在流式模式下');
+      return;
+    }
+    
+    this.audioQueue.push(chunk);
+    
+    // 如果还没开始播放，尝试开始播放
+    // 注意：某些 TTS Provider（如 Edge TTS）只产生 1 个音频块，因此不能等待多个块
+    if (!this.isPlaying && this.currentAudio) {
+      this.currentAudio.play().catch(err => {
+        window.logger.warn('[AudioPlayer] 自动播放失败:', err);
+      });
+    }
+    
+    this.processQueue();
+  }
+
+  /**
+   * 处理音频队列
+   */
+  private processQueue(): void {
+    if (!this.sourceBuffer || this.sourceBuffer.updating || this.audioQueue.length === 0) {
+      return;
+    }
+    
+    const chunk = this.audioQueue.shift()!;
+    
+    try {
+      this.sourceBuffer.appendBuffer(chunk.buffer as ArrayBuffer);
+    } catch (error) {
+      window.logger.error('[AudioPlayer] 追加音频块失败:', error);
+    }
+  }
+
+  /**
+   * 结束流式传输
+   */
+  public endStream(): void {
+    if (!this.isStreamMode || !this.mediaSource) return;
+    
+    // 等待所有数据处理完毕，最多重试 50 次（5 秒）
+    const MAX_END_RETRIES = 50;
+    let retryCount = 0;
+    
+    const tryEnd = () => {
+      if (this.audioQueue.length > 0) {
+        retryCount++;
+        if (retryCount >= MAX_END_RETRIES) {
+          window.logger.warn(`[AudioPlayer] endStream 重试超过上限 (${MAX_END_RETRIES})，强制结束`);
+          this.audioQueue = [];
+          // 强制结束流
+          try {
+            if (this.mediaSource && this.mediaSource.readyState === 'open') {
+              this.mediaSource.endOfStream();
+            }
+          } catch (error) {
+            window.logger.warn('[AudioPlayer] 强制结束流失败:', error);
+          }
+          return;
+        }
+        setTimeout(tryEnd, 100);
+        return;
+      }
+      
+      if (this.sourceBuffer && !this.sourceBuffer.updating) {
+        try {
+          if (this.mediaSource && this.mediaSource.readyState === 'open') {
+            this.mediaSource.endOfStream();
+            window.logger.info('[AudioPlayer] 流式传输结束');
+            // 确保音频开始播放（某些 TTS 只产生单块音频，play 可能在 sourceBuffer 就绪前调用过早）
+            if (!this.isPlaying && this.currentAudio) {
+              this.currentAudio.play().catch(err => {
+                window.logger.warn('[AudioPlayer] endStream 播放失败:', err);
+              });
+            }
+          }
+        } catch (error) {
+          window.logger.warn('[AudioPlayer] 结束流失败:', error);
+        }
+      }
+    };
+    
+    tryEnd();
+  }
+
+  /**
+   * 设置时间轴
+   * @param timeline - 时间轴数组
+   * @param totalDuration - 总时长（毫秒）
+   */
+  public setTimeline(timeline: Array<{timing: string | number, callback: () => void}>, totalDuration?: number): void {
+    this.clearTimeline();
+    
+    timeline.forEach(item => {
+      let triggerTime: number;
+      
+      if (typeof item.timing === 'number') {
+        // 百分比 (0-100)
+        if (totalDuration) {
+          triggerTime = (item.timing / 100) * totalDuration;
+        } else {
+          window.logger.warn('[AudioPlayer] 百分比时间轴需要 totalDuration');
+          return;
+        }
+      } else {
+        // 语义标记
+        const semanticMap: {[key: string]: number} = {
+          'start': 0,
+          'early': 0.15,
+          'middle': 0.5,
+          'late': 0.85,
+          'end': 0.98
+        };
+        
+        const ratio = semanticMap[item.timing] ?? 0;
+        triggerTime = totalDuration ? ratio * totalDuration : 0;
+      }
+      
+      this.timelineCallbacks.push({
+        trigger: triggerTime,
+        callback: item.callback
+      });
+    });
+    
+    window.logger.info('[AudioPlayer] 时间轴已设置:', this.timelineCallbacks.length, '个触发点');
+  }
+
+  /**
+   * 启动时间轴
+   */
+  public startTimeline(): void {
+    this.timelineCallbacks.forEach(item => {
+      const timer = window.setTimeout(() => {
+        item.callback();
+      }, item.trigger);
+      
+      this.timelineTimers.push(timer);
+    });
+  }
+
+  /**
+   * 清除时间轴
+   */
+  private clearTimeline(): void {
+    this.timelineTimers.forEach(timer => clearTimeout(timer));
+    this.timelineTimers = [];
+    this.timelineCallbacks = [];
+  }
+}
+
+// 导出全局实例
+window.audioPlayer = new AudioPlayer();

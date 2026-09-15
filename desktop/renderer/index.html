@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NyaDeskPet</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- 顶栏（可拖动区域） -->
+  <div id="top-bar" class="top-bar">
+    <div class="status-section">
+      <div id="status-indicator" class="status-dot disconnected"></div>
+      <span id="status-text" class="status-text" data-i18n="topBar.disconnected">未连接</span>
+    </div>
+    <div class="controls-section">
+      <button id="btn-agent" class="top-bar-btn hidden" data-i18n-title="topBar.agent">
+        <i data-lucide="bot"></i>
+      </button>
+      <button id="btn-plugins" class="top-bar-btn" data-i18n-title="topBar.plugins">
+        <i data-lucide="puzzle"></i>
+      </button>
+      <button id="btn-settings" class="top-bar-btn" data-i18n-title="topBar.settings">
+        <i data-lucide="settings"></i>
+      </button>
+      <button id="btn-minimize" class="top-bar-btn" data-i18n-title="topBar.minimize">
+        <i data-lucide="minus"></i>
+      </button>
+      <button id="btn-close" class="top-bar-btn" data-i18n-title="topBar.close">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- 主内容区域（Live2D 模型） -->
+  <div id="main-content">
+    <!-- Live2D 画布容器 -->
+    <div id="live2d-container">
+      <canvas id="live2d-canvas"></canvas>
+    </div>
+
+    <!-- 对话框（模型说话显示） -->
+    <div id="dialogue-box" class="hidden">
+      <div id="dialogue-text"></div>
+      <div id="dialogue-progress"></div>
+    </div>
+
+    <!-- 交互区域 -->
+    <div id="interaction-area"></div>
+    
+    <!-- 摄像头预览容器 -->
+    <div id="camera-preview-container" class="camera-preview-container hidden">
+      <div class="camera-preview-header">
+        <span data-i18n="camera.preview">摄像头预览</span>
+        <button id="btn-close-camera" class="btn-icon-small">
+          <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+        </button>
+      </div>
+      <video id="camera-preview" autoplay playsinline></video>
+      <select id="camera-select" class="camera-select">
+        <option value="" data-i18n="camera.selectDevice">选择摄像头...</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- 底栏 -->
+  <div id="bottom-bar" class="bottom-bar">
+    <button id="btn-open-chat" class="chat-btn" data-i18n-title="bottomBar.openChat">
+      <i data-lucide="message-circle"></i>
+    </button>
+  </div>
+
+  <!-- UI切换按钮 -->
+  <button id="btn-toggle-ui" class="toggle-ui-btn" data-i18n-title="app.toggleUI">
+    <i data-lucide="eye-off"></i>
+  </button>
+
+  <!-- 对话窗口 (侧栏) -->
+  <div id="chat-window" class="chat-sidebar hidden">
+    <div class="chat-sidebar-header">
+      <div id="chat-title-bar" class="chat-title-bar" data-i18n-title="chatWindow.toggleConversations">
+        <i data-lucide="message-square" style="width: 18px; height: 18px; flex-shrink: 0;"></i>
+        <span id="chat-current-title" class="chat-current-title" data-i18n="chatWindow.newChat">新对话</span>
+        <i data-lucide="chevron-down" class="chat-title-chevron" style="width: 16px; height: 16px; flex-shrink: 0;"></i>
+      </div>
+      <div class="chat-header-actions">
+        <button id="btn-new-chat" class="btn-icon-header" data-i18n-title="chatWindow.newChat">
+          <i data-lucide="plus" style="width: 18px; height: 18px;"></i>
+        </button>
+        <button id="btn-close-chat" class="btn-icon-header" data-i18n-title="chatWindow.close">
+          <i data-lucide="x" style="width: 18px; height: 18px;"></i>
+        </button>
+      </div>
+    </div>
+    
+    <!-- 对话历史下拉面板（默认隐藏） -->
+    <div id="conversation-dropdown" class="conversation-dropdown hidden">
+      <div id="conversation-list" class="conversation-list">
+        <!-- 对话列表由后端管理，动态加载 -->
+      </div>
+    </div>
+    
+    <!-- 当前对话区域 -->
+    <div class="chat-content">
+      <div id="chat-messages" class="chat-messages">
+        <!-- 消息将动态添加到这里 -->
+      </div>
+      <div class="chat-input-area">
+        <div class="input-controls">
+          <button id="btn-voice" class="input-btn" data-i18n-title="chatWindow.voice">
+            <i data-lucide="mic"></i>
+            <span class="btn-label" data-i18n="chatWindow.voice">语音输入</span>
+          </button>
+          <button id="btn-camera" class="input-btn" data-i18n-title="chatWindow.camera">
+            <i data-lucide="video"></i>
+            <span class="btn-label" data-i18n="chatWindow.camera">摄像头</span>
+          </button>
+          <button id="btn-attach" class="input-btn" data-i18n-title="chatWindow.attach">
+            <i data-lucide="paperclip"></i>
+            <span class="btn-label" data-i18n="chatWindow.attach">发送文件</span>
+          </button>
+          <input type="file" id="file-input" style="display: none;" multiple>
+        </div>
+        <div class="input-wrapper">
+          <textarea id="chat-input" data-i18n-placeholder="chatWindow.placeholder" placeholder="输入消息..." rows="1"></textarea>
+          <button id="btn-send" class="send-btn" data-i18n="chatWindow.send">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置面板 -->
+  <div id="settings-panel" class="settings-panel">
+    <div class="settings-content">
+      <div class="settings-header">
+        <h2>
+          <i data-lucide="settings" style="width: 20px; height: 20px; display: inline-block; vertical-align: middle; margin-right: 8px;"></i>
+          <span data-i18n="settings.title">设置</span>
+        </h2>
+        <button id="btn-close-settings" class="btn-icon" data-i18n-title="settings.close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      
+      <!-- 设置标签页 -->
+      <div class="settings-tabs">
+        <button class="settings-tab active" data-tab="model">
+          <i data-lucide="smile" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="settings.tabs.model">模型</span>
+        </button>
+        <button class="settings-tab" data-tab="connection">
+          <i data-lucide="globe" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="settings.tabs.connection">连接</span>
+        </button>
+        <button class="settings-tab" data-tab="character">
+          <i data-lucide="user" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="settings.tabs.character">角色</span>
+        </button>
+        <button class="settings-tab" data-tab="display">
+          <i data-lucide="palette" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="settings.tabs.display">显示</span>
+        </button>
+        <button class="settings-tab" data-tab="logs">
+          <i data-lucide="file-text" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="settings.tabs.logs">日志</span>
+        </button>
+        <button class="settings-tab" data-tab="about">
+          <i data-lucide="info" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="settings.tabs.about">关于</span>
+        </button>
+      </div>
+      
+      <div class="settings-body">
+        <!-- 模型设置标签页 -->
+        <div class="settings-tab-content active" data-tab-content="model">
+          <div class="settings-section">
+            <h3 data-i18n="settings.model.title">Live2D 模型</h3>
+            <div class="setting-item">
+              <label for="setting-model-path" data-i18n="settings.model.path">模型路径</label>
+              <div class="input-with-button">
+                <input type="text" id="setting-model-path" data-i18n-placeholder="settings.model.pathPlaceholder" placeholder="../models/default/model3.json" readonly>
+                <button id="btn-browse-model" class="btn-browse" data-i18n-title="settings.model.browse">
+                  <i data-lucide="folder-open"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3 data-i18n="settings.tap.title">触碰反应配置</h3>
+            <div id="tap-config-container" class="tap-config-container">
+              <!-- 触碰配置项将动态生成 -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 连接设置标签页 -->
+        <div class="settings-tab-content" data-tab-content="connection">
+          <div class="settings-section">
+            <h3 data-i18n="settings.backend.title">后端连接</h3>
+            <div class="setting-item">
+              <label for="setting-backend-mode" data-i18n="settings.backend.mode">后端模式</label>
+              <select id="setting-backend-mode">
+                <option value="builtin" data-i18n="settings.backend.modeBuiltin">内置 Agent</option>
+                <option value="custom" data-i18n="settings.backend.modeCustom">自定义链接</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <label class="setting-toggle">
+                <input type="checkbox" id="setting-auto-connect">
+                <span class="setting-toggle-slider"></span>
+                <span class="setting-toggle-label" data-i18n="settings.backend.autoConnect">启动时自动连接后端</span>
+              </label>
+            </div>
+            <div id="builtin-backend-fields">
+              <div class="setting-item">
+                <label for="setting-agent-port" data-i18n="settings.backend.agentPort">Agent 端口</label>
+                <input type="number" id="setting-agent-port" min="1024" max="65535" data-i18n-placeholder="settings.backend.agentPortPlaceholder" placeholder="默认 8765">
+              </div>
+            </div>
+            <div id="custom-backend-fields">
+              <div class="setting-item">
+                <label for="setting-backend-url" data-i18n="settings.backend.httpUrl">HTTP 地址</label>
+                <input type="text" id="setting-backend-url" data-i18n-placeholder="settings.backend.httpPlaceholder" placeholder="http://localhost:8000">
+              </div>
+              <div class="setting-item">
+                <label for="setting-websocket-url" data-i18n="settings.backend.wsUrl">WebSocket 地址</label>
+                <input type="text" id="setting-websocket-url" data-i18n-placeholder="settings.backend.wsPlaceholder" placeholder="ws://localhost:8000/ws">
+              </div>
+            </div>
+          </div>
+          
+          <div class="settings-section">
+            <h3 data-i18n="settings.audio.title">音频</h3>
+            <div class="setting-item">
+              <label for="setting-volume"><span data-i18n="settings.audio.volume">音量</span> <span id="volume-value">80%</span></label>
+              <input type="range" id="setting-volume" min="0" max="1" step="0.01" value="0.8">
+            </div>
+          </div>
+          
+          <div class="settings-section">
+            <h3 data-i18n="settings.microphone.title">麦克风</h3>
+            <div class="setting-item">
+              <label for="setting-asr-model" data-i18n="settings.microphone.asrModel">语音识别模型</label>
+              <div class="asr-model-select-wrapper">
+                <select id="setting-asr-model" class="setting-select">
+                  <option value="" data-i18n="settings.microphone.asrModelLoading">加载中...</option>
+                </select>
+                <span id="asr-model-status" class="asr-model-status"></span>
+              </div>
+            </div>
+            <div class="setting-item">
+              <label class="setting-toggle">
+                <input type="checkbox" id="setting-mic-background-mode">
+                <span class="setting-toggle-slider"></span>
+                <span class="setting-toggle-label" data-i18n="settings.microphone.backgroundMode">允许背景工作</span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <label for="setting-mic-threshold">
+                <span data-i18n="settings.microphone.volumeThreshold">音量阈值</span> 
+                <span id="mic-threshold-value">30</span>
+              </label>
+              <input type="range" id="setting-mic-threshold" min="0" max="100" step="1" value="30">
+            </div>
+            <div class="setting-item">
+              <label class="setting-toggle">
+                <input type="checkbox" id="setting-mic-auto-send" checked>
+                <span class="setting-toggle-slider"></span>
+                <span class="setting-toggle-label" data-i18n="settings.microphone.autoSend">识别后自动发送</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 角色设置标签页 -->
+        <div class="settings-tab-content" data-tab-content="character">
+          <div class="settings-section">
+            <h3 data-i18n="settings.character.title">角色设置</h3>
+            <div class="setting-item">
+              <label class="setting-toggle">
+                <input type="checkbox" id="setting-use-custom-character">
+                <span class="setting-toggle-slider"></span>
+                <span class="setting-toggle-label" data-i18n="settings.character.useCustom">启用自定义角色</span>
+              </label>
+            </div>
+            
+            <div class="setting-item">
+              <label for="setting-custom-name" data-i18n="settings.character.name">桌宠名称</label>
+              <input type="text" id="setting-custom-name" data-i18n-placeholder="settings.character.namePlaceholder" placeholder="例如：小喵">
+            </div>
+            
+            <div class="setting-item">
+              <label for="setting-custom-personality" data-i18n="settings.character.personality">人设描述</label>
+              <div id="setting-custom-personality" class="monaco-editor-container"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 显示设置标签页 -->
+        <div class="settings-tab-content" data-tab-content="display">
+          <div class="settings-section">
+            <h3 data-i18n="settings.appearance.title">外观</h3>
+            <div class="setting-item">
+              <label for="setting-language" data-i18n="settings.appearance.language">语言</label>
+              <select id="setting-language">
+                <option value="zh-CN">简体中文</option>
+                <option value="en-US">English</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <label for="setting-theme" data-i18n="settings.appearance.theme">主题</label>
+              <select id="setting-theme">
+                <option value="light" data-i18n="settings.appearance.themeLight">明亮</option>
+                <option value="dark" data-i18n="settings.appearance.themeDark">暗黑</option>
+                <option value="system" data-i18n="settings.appearance.themeSystem">跟随系统</option>
+              </select>
+            </div>
+            <div class="setting-item">
+              <label class="setting-toggle">
+                <input type="checkbox" id="setting-show-subtitle" checked>
+                <span class="setting-toggle-slider"></span>
+                <span class="setting-toggle-label" data-i18n="settings.appearance.showSubtitle">显示对话字幕</span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <label class="setting-toggle">
+                <input type="checkbox" id="setting-enable-eye-tracking" checked>
+                <span class="setting-toggle-slider"></span>
+                <span class="setting-toggle-label" data-i18n="settings.appearance.enableEyeTracking">启用视线跟随</span>
+              </label>
+            </div>
+            <div class="setting-item">
+              <label class="setting-toggle">
+                <input type="checkbox" id="setting-auto-launch">
+                <span class="setting-toggle-slider"></span>
+                <span class="setting-toggle-label" data-i18n="settings.general.autoLaunch">开机自启动</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 日志标签页 -->
+        <div class="settings-tab-content" data-tab-content="logs">
+          <div class="settings-section">
+            <h3>
+              <i data-lucide="file-text" style="width: 18px; height: 18px;"></i>
+              <span data-i18n="settings.logs.title">日志</span>
+            </h3>
+            <div class="setting-item">
+              <label class="setting-toggle">
+                <input type="checkbox" id="setting-log-enabled" checked>
+                <span class="setting-toggle-slider"></span>
+                <span class="setting-toggle-label" data-i18n="settings.logs.enableLogging">启用日志记录</span>
+              </label>
+            </div>
+          </div>
+          
+          <div class="settings-section">
+            <h3>
+              <i data-lucide="filter" style="width: 18px; height: 18px;"></i>
+              <span data-i18n="settings.logs.logLevels">日志等级</span>
+            </h3>
+            <div class="setting-log-levels-row">
+              <label class="setting-log-level-item">
+                <input type="checkbox" id="log-level-debug" value="debug">
+                <span data-i18n="settings.logs.levelDebug">调试</span>
+              </label>
+              <label class="setting-log-level-item">
+                <input type="checkbox" id="log-level-info" value="info">
+                <span data-i18n="settings.logs.levelInfo">信息</span>
+              </label>
+              <label class="setting-log-level-item">
+                <input type="checkbox" id="log-level-warn" value="warn" checked>
+                <span data-i18n="settings.logs.levelWarn">警告</span>
+              </label>
+              <label class="setting-log-level-item">
+                <input type="checkbox" id="log-level-error" value="error" checked>
+                <span data-i18n="settings.logs.levelError">错误</span>
+              </label>
+              <label class="setting-log-level-item">
+                <input type="checkbox" id="log-level-critical" value="critical" checked>
+                <span data-i18n="settings.logs.levelCritical">严重</span>
+              </label>
+            </div>
+          </div>
+          
+          <div class="settings-section">
+            <h3>
+              <i data-lucide="calendar" style="width: 18px; height: 18px;"></i>
+              <span data-i18n="settings.logs.retention">日志保留</span>
+            </h3>
+            <div class="setting-item">
+              <label for="setting-log-retention-days" data-i18n="settings.logs.retentionDays">保留天数</label>
+              <input type="number" id="setting-log-retention-days" min="1" max="90" value="7">
+            </div>
+          </div>
+          
+          <div class="settings-section">
+            <h3>
+              <i data-lucide="folder" style="width: 18px; height: 18px;"></i>
+              <span data-i18n="settings.logs.logFiles">日志文件</span>
+            </h3>
+            <div class="log-files-actions">
+              <button id="btn-refresh-logs" class="btn-small">
+                <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="settings.logs.refresh">刷新</span>
+              </button>
+              <button id="btn-open-log-directory" class="btn-small">
+                <i data-lucide="folder-open" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="settings.logs.openDirectory">打开文件夹</span>
+              </button>
+              <button id="btn-delete-all-logs" class="btn-small btn-danger">
+                <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="settings.logs.deleteAll">删除全部</span>
+              </button>
+            </div>
+            <div id="log-files-list" class="log-files-list">
+              <!-- 日志文件列表将动态生成 -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 关于标签页 -->
+        <div class="settings-tab-content" data-tab-content="about">
+          <div class="settings-section">
+            <h3 data-i18n="settings.about.title">关于</h3>
+            <div class="setting-item about-info">
+              <span><span data-i18n="settings.about.version">版本</span>: <span id="app-version">1.0.0</span></span>
+              <button id="btn-check-update" class="btn-small">
+                <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="settings.about.checkUpdate">检查更新</span>
+              </button>
+            </div>
+            <div class="setting-item">
+              <label for="setting-update-source" data-i18n="settings.about.updateSource">更新源</label>
+              <input type="text" id="setting-update-source" data-i18n-placeholder="settings.about.updateSourcePlaceholder" placeholder="https://github.com/owner/repo">
+            </div>
+            <div id="update-status" class="update-status hidden"></div>
+          </div>
+
+          <!-- 项目链接 -->
+          <div class="about-links-bar">
+            <a href="#" class="about-link about-link-github" id="link-github">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+              <span data-i18n="settings.about.projectRepo">项目地址</span>
+            </a>
+            <span class="about-link-sep">·</span>
+            <a href="#" class="about-link about-link-donate" id="link-donate">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+              <span data-i18n="settings.about.donate">捐赠支持</span>
+            </a>
+            <span class="about-link-sep">·</span>
+            <a href="#" class="about-link about-link-help" id="link-usage-help">
+              <i data-lucide="book-open" style="width: 13px; height: 13px;"></i>
+              <span data-i18n="settings.about.usageHelp">使用帮助</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-footer">
+        <button id="btn-reset-settings" class="btn-secondary" data-i18n="settings.resetButton">恢复默认</button>
+        <button id="btn-save-settings" class="btn-primary" data-i18n="settings.saveButton">保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 插件管理面板 -->
+  <div id="plugins-panel" class="plugins-panel">
+    <div class="plugins-content">
+      <div class="plugins-header">
+        <h2>
+          <i data-lucide="puzzle" style="width: 20px; height: 20px; display: inline-block; vertical-align: middle; margin-right: 8px;"></i>
+          <span data-i18n="plugins.title">插件管理</span>
+        </h2>
+        <button id="btn-close-plugins" class="btn-icon" data-i18n-title="plugins.close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      
+      <div class="plugins-body">
+        <div class="plugins-section">
+          <p class="plugins-description" data-i18n="plugins.description">
+            管理应用插件，控制插件权限和状态
+          </p>
+          
+          <!-- 插件列表 -->
+          <div id="plugin-list" class="plugin-list">
+            <!-- 插件卡片将动态生成 -->
+            <div class="plugin-list-empty" data-i18n="plugins.noPlugins">
+              暂无已安装的插件
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent 管理面板 -->
+  <div id="agent-panel" class="agent-panel">
+    <div class="agent-content">
+      <div class="agent-header">
+        <h2>
+          <i data-lucide="bot" style="width: 20px; height: 20px; display: inline-block; vertical-align: middle; margin-right: 8px;"></i>
+          <span data-i18n="agent.title">Agent 管理</span>
+        </h2>
+        <button id="btn-close-agent" class="btn-icon" data-i18n-title="agent.close">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+
+      <!-- Agent 标签页栏 -->
+      <div class="agent-tabs">
+        <button class="agent-tab active" data-agent-tab="overview">
+          <i data-lucide="layout-dashboard" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="agent.tabs.overview">概览</span>
+        </button>
+        <button class="agent-tab" data-agent-tab="tools">
+          <i data-lucide="wrench" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="agent.tabs.tools">工具</span>
+        </button>
+        <button class="agent-tab" data-agent-tab="plugins">
+          <i data-lucide="blocks" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="agent.tabs.plugins">插件</span>
+        </button>
+        <button class="agent-tab" data-agent-tab="commands">
+          <i data-lucide="terminal" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="agent.tabs.commands">指令</span>
+        </button>
+        <button class="agent-tab" data-agent-tab="skills">
+          <i data-lucide="sparkles" style="width: 16px; height: 16px;"></i>
+          <span data-i18n="agent.tabs.skills">技能</span>
+        </button>
+      </div>
+      
+      <div class="agent-body">
+
+        <!-- 概览标签页 -->
+        <div class="agent-tab-content active" data-agent-tab-content="overview">
+          <!-- 服务状态区 -->
+          <div class="agent-section">
+            <h3>
+              <i data-lucide="server" style="width: 15px; height: 15px;"></i>
+              <span data-i18n="agent.serverStatus">服务状态</span>
+            </h3>
+            <div class="agent-status-card">
+              <div class="agent-status-row">
+                <span class="agent-status-label" data-i18n="agent.status">状态</span>
+                <span id="agent-status-badge" class="agent-status-badge stopped">
+                  <i data-lucide="circle" style="width: 10px; height: 10px;"></i>
+                  <span id="agent-status-text" data-i18n="agent.stopped">已停止</span>
+                </span>
+              </div>
+              <div class="agent-status-row">
+                <span class="agent-status-label" data-i18n="agent.address">地址</span>
+                <span id="agent-address" class="agent-status-value">-</span>
+              </div>
+              <div class="agent-status-row">
+                <span class="agent-status-label" data-i18n="agent.clients">连接数</span>
+                <span id="agent-clients" class="agent-status-value">0</span>
+              </div>
+              <div class="agent-status-row">
+                <span class="agent-status-label" data-i18n="agent.uptime">运行时间</span>
+                <span id="agent-uptime" class="agent-status-value">-</span>
+              </div>
+            </div>
+            
+            <div class="agent-actions">
+              <button id="btn-agent-start" class="btn-primary">
+                <i data-lucide="play" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="agent.start">启动</span>
+              </button>
+              <button id="btn-agent-stop" class="btn-secondary" disabled>
+                <i data-lucide="square" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="agent.stop">停止</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- LLM Provider 实例区 -->
+          <div class="agent-section">
+            <h3>
+              <i data-lucide="brain" style="width: 15px; height: 15px;"></i>
+              <span data-i18n="agent.provider.title">LLM Provider</span>
+            </h3>
+            <div class="agent-provider-list-header">
+              <button id="btn-add-provider" class="btn-small btn-primary">
+                <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="agent.provider.add">添加 Provider</span>
+              </button>
+            </div>
+            <div id="agent-provider-list" class="agent-provider-list">
+              <!-- Provider 实例卡片动态生成 -->
+            </div>
+          </div>
+
+          <!-- TTS Provider 实例区 -->
+          <div class="agent-section">
+            <h3>
+              <i data-lucide="volume-2" style="width: 15px; height: 15px;"></i>
+              <span data-i18n="agent.tts.title">TTS Provider</span>
+            </h3>
+            <div class="agent-provider-list-header">
+              <button id="btn-add-tts" class="btn-small btn-primary">
+                <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="agent.tts.add">添加 TTS</span>
+              </button>
+            </div>
+            <div id="agent-tts-list" class="agent-provider-list">
+              <!-- TTS Provider 实例卡片动态生成 -->
+            </div>
+          </div>
+
+
+        </div>
+
+        <!-- 工具标签页 -->
+        <div class="agent-tab-content" data-agent-tab-content="tools">
+          <!-- Function 工具区 -->
+          <div class="agent-section">
+            <h3>
+              <i data-lucide="wrench" style="width: 15px; height: 15px;"></i>
+              <span data-i18n="agent.tools.title">Function 工具</span>
+            </h3>
+            <div class="agent-tools-header">
+              <div class="agent-tools-stats">
+                <span id="agent-tools-count" class="agent-tools-count">0 个工具</span>
+                <span id="agent-tools-enabled-count" class="agent-tools-enabled-count">(0 已启用)</span>
+              </div>
+              <button id="btn-tools-refresh" class="btn-icon-small" title="刷新">
+                <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+              </button>
+            </div>
+            <div id="agent-tools-list" class="agent-tools-list">
+              <div class="agent-tools-empty" data-i18n="agent.tools.empty">
+                暂无已注册的工具
+              </div>
+            </div>
+          </div>
+
+          <!-- MCP 服务器区 -->
+          <div class="agent-section">
+            <h3>
+              <i data-lucide="plug" style="width: 15px; height: 15px;"></i>
+              <span data-i18n="agent.mcp.title">MCP 服务器</span>
+            </h3>
+            <div id="agent-mcp-list" class="agent-mcp-list">
+              <div class="agent-mcp-empty" data-i18n="agent.mcp.noServers">
+                暂无 MCP 服务器
+              </div>
+            </div>
+            <div class="agent-mcp-add-section">
+              <button id="btn-mcp-add" class="btn-small btn-primary">
+                <i data-lucide="plus" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="agent.mcp.add">添加 MCP 服务器</span>
+              </button>
+            </div>
+
+            <!-- MCP 添加表单（默认隐藏） -->
+            <div id="agent-mcp-form" class="agent-mcp-form hidden">
+              <div class="agent-mcp-form-row">
+                <label data-i18n="agent.mcp.name">名称</label>
+                <input type="text" id="mcp-name" placeholder="my-mcp-server" />
+              </div>
+              <div class="agent-mcp-form-row">
+                <label data-i18n="agent.mcp.description">描述</label>
+                <input type="text" id="mcp-description" placeholder="可选描述" />
+              </div>
+              <div class="agent-mcp-form-row">
+                <label data-i18n="agent.mcp.transport">传输方式</label>
+                <select id="mcp-transport">
+                  <option value="stdio">stdio</option>
+                  <option value="sse">SSE</option>
+                </select>
+              </div>
+              <div class="agent-mcp-form-row" id="mcp-command-row">
+                <label data-i18n="agent.mcp.command">命令</label>
+                <input type="text" id="mcp-command" placeholder="npx -y @modelcontextprotocol/server" />
+              </div>
+              <div class="agent-mcp-form-row hidden" id="mcp-url-row">
+                <label data-i18n="agent.mcp.url">URL</label>
+                <input type="text" id="mcp-url" placeholder="http://localhost:3001/sse" />
+              </div>
+              <div class="agent-mcp-form-row">
+                <label data-i18n="agent.mcp.workingDir">工作目录</label>
+                <input type="text" id="mcp-working-dir" placeholder="可选，默认项目根目录" />
+              </div>
+              <div class="agent-mcp-form-row">
+                <label data-i18n="agent.mcp.env">环境变量 (JSON)</label>
+                <input type="text" id="mcp-env" placeholder='{"API_KEY": "xxx"}' />
+              </div>
+              <div class="agent-mcp-form-actions">
+                <button id="btn-mcp-save" class="btn-small btn-primary">
+                  <i data-lucide="save" style="width: 14px; height: 14px;"></i>
+                  <span data-i18n="agent.mcp.save">保存</span>
+                </button>
+                <button id="btn-mcp-cancel" class="btn-small">
+                  <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+                  <span data-i18n="agent.mcp.cancel">取消</span>
+                </button>
+              </div>
+              <div id="agent-mcp-form-status" class="agent-provider-status hidden"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 插件标签页 -->
+        <div class="agent-tab-content" data-agent-tab-content="plugins">
+          <div class="agent-section">
+            <p class="agent-plugins-description" data-i18n="agent.agentPlugins.description">
+              管理 Agent 插件，扩展内置 Agent 的能力
+            </p>
+            <div class="agent-plugins-actions">
+              <button id="btn-agent-plugin-refresh" class="btn-small">
+                <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="agent.agentPlugins.refresh">刷新</span>
+              </button>
+              <button id="btn-agent-plugin-open-dir" class="btn-small">
+                <i data-lucide="folder-open" style="width: 14px; height: 14px;"></i>
+                <span data-i18n="agent.agentPlugins.openDir">打开插件目录</span>
+              </button>
+            </div>
+          </div>
+          <div id="agent-plugin-list" class="agent-plugin-list">
+            <div class="agent-plugin-empty" data-i18n="agent.agentPlugins.empty">
+              暂无已安装的 Agent 插件
+            </div>
+          </div>
+
+          <!-- Agent 插件配置弹窗通过 JS 动态创建 -->
+        </div>
+
+        <!-- 指令标签页 -->
+        <div class="agent-tab-content" data-agent-tab-content="commands">
+          <div class="agent-section">
+            <h3>
+              <i data-lucide="terminal" style="width: 15px; height: 15px;"></i>
+              <span data-i18n="agent.commands.title">斜杠指令</span>
+            </h3>
+            <p class="agent-plugins-description" data-i18n="agent.commands.description">
+              管理已注册的斜杠指令，在对话输入框中输入 / 触发补全
+            </p>
+            <div class="agent-toggle-row">
+              <label for="toggle-command-filter" data-i18n="agent.commands.filterLabel">从 LLM 上下文中过滤指令消息</label>
+              <input type="checkbox" id="toggle-command-filter" checked />
+            </div>
+            <div class="agent-commands-header">
+              <span id="agent-commands-count" class="agent-commands-stats">0 个指令</span>
+              <button id="btn-commands-refresh" class="btn-icon-small" title="刷新">
+                <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+              </button>
+            </div>
+          </div>
+          <div id="agent-command-list" class="agent-command-list">
+            <div class="agent-command-empty" data-i18n="agent.commands.empty">
+              暂无已注册的指令
+            </div>
+          </div>
+        </div>
+
+        <!-- 技能标签页 -->
+        <div class="agent-tab-content" data-agent-tab-content="skills">
+          <div class="agent-section">
+            <h3>
+              <i data-lucide="sparkles" style="width: 15px; height: 15px;"></i>
+              <span data-i18n="agent.skills.title">Agent 技能</span>
+            </h3>
+            <p class="agent-plugins-description" data-i18n="agent.skills.description">
+              管理 Agent 技能，技能是可组合多个工具和 LLM 调用的高级能力，由 Agent 插件注册
+            </p>
+            <div class="agent-skills-header">
+              <span id="agent-skills-count" class="agent-skills-stats">0 个技能</span>
+              <button id="btn-skills-refresh" class="btn-icon-small" title="刷新">
+                <i data-lucide="refresh-cw" style="width: 14px; height: 14px;"></i>
+              </button>
+            </div>
+          </div>
+          <div id="agent-skill-list" class="agent-skill-list">
+            <div class="agent-skill-empty" data-i18n="agent.skills.empty">
+              暂无已注册的技能
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- 插件权限批准弹窗 -->
+  <div id="plugin-permission-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>
+          <i data-lucide="shield-alert" style="width: 20px; height: 20px; color: #ff6b6b;"></i>
+          <span data-i18n="plugins.permission.title">权限请求</span>
+        </h3>
+      </div>
+      <div class="modal-body">
+        <div class="permission-request-info">
+          <div class="permission-plugin">
+            <strong data-i18n="plugins.permission.plugin">插件：</strong>
+            <span id="permission-plugin-name"></span>
+          </div>
+          <div class="permission-name">
+            <strong data-i18n="plugins.permission.requesting">请求权限：</strong>
+            <span id="permission-name" class="permission-badge"></span>
+          </div>
+          <div class="permission-description">
+            <strong data-i18n="plugins.permission.description">说明：</strong>
+            <span id="permission-description"></span>
+          </div>
+          <div class="permission-action">
+            <strong data-i18n="plugins.permission.action">操作：</strong>
+            <span id="permission-action"></span>
+          </div>
+        </div>
+        <div class="permission-warning" data-i18n="plugins.permission.warning">
+          ⚠️ 此权限可能影响系统安全，请谨慎授权
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-permission-deny" class="btn-secondary" data-i18n="plugins.permission.deny">拒绝</button>
+        <button id="btn-permission-approve" class="btn-primary" data-i18n="plugins.permission.approve">允许</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 脚本引入 -->
+  <script src="lib/pixi.min.js"></script>
+  <!-- Cubism 4 Core 运行时（必须在 pixi-live2d-display 之前加载） -->
+  <script src="lib/live2dcubismcore.min.js"></script>
+  <!-- pixi-live2d-display Cubism 4 支持 -->
+  <script src="lib/pixi-live2d-cubism4.min.js"></script>
+  <!-- Lucide Icons 图标库 -->
+  <script src="lib/lucide.min.js"></script>
+  <!-- TypeScript 编译后的 JavaScript 文件 -->
+  <script type="module" src="js/i18n-manager.js"></script>
+  <script type="module" src="js/theme-manager.js"></script>
+  <script type="module" src="js/settings-manager.js"></script>
+  <script type="module" src="js/logger.js"></script>
+  <script type="module" src="js/plugin-connector.js"></script>
+  <script type="module" src="js/plugin-ui.js"></script>
+  <script type="module" src="js/plugin-config-manager.js"></script>
+  <script type="module" src="js/plugin-config-ui.js"></script>
+  <script type="module" src="js/monaco-manager.js"></script>
+  <script type="module" src="js/plugin-permission-manager.js"></script>
+  <script type="module" src="js/live2d-manager.js"></script>
+  <script type="module" src="js/response-controller.js"></script>
+  <script type="module" src="js/backend-client.js"></script>
+  <script type="module" src="js/dialogue-manager.js"></script>
+  <script type="module" src="js/audio-player.js"></script>
+  <script type="module" src="js/camera-manager.js"></script>
+  <script type="module" src="js/microphone-manager.js"></script>
+  <!-- Provider 配置弹窗 -->
+  <div id="provider-dialog-overlay" class="provider-dialog-overlay hidden">
+    <div class="provider-dialog">
+      <div class="provider-dialog-header">
+        <h3 id="provider-dialog-title">
+          <i data-lucide="brain" style="width: 18px; height: 18px;"></i>
+          <span data-i18n="agent.provider.addTitle">添加 Provider</span>
+        </h3>
+        <button id="btn-close-provider-dialog" class="close-btn">
+          <i data-lucide="x" style="width: 18px; height: 18px;"></i>
+        </button>
+      </div>
+      <div class="provider-dialog-body">
+        <div class="provider-field">
+          <label data-i18n="agent.provider.type">Provider 类型</label>
+          <select id="provider-form-type">
+            <!-- 动态生成 -->
+          </select>
+        </div>
+        <div class="provider-field">
+          <label data-i18n="agent.provider.displayName">显示名称</label>
+          <input type="text" id="provider-form-name" data-i18n-placeholder="agent.provider.displayNamePlaceholder" placeholder="例如：我的 OpenAI">
+        </div>
+        <div id="provider-form-config" class="agent-provider-config">
+          <!-- Provider 配置字段动态生成 -->
+        </div>
+      </div>
+      <div class="provider-dialog-footer">
+        <div id="provider-dialog-status" class="agent-provider-status hidden"></div>
+        <div class="provider-dialog-footer-right">
+          <button id="btn-provider-dialog-cancel" class="provider-dialog-btn">
+            <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+            <span data-i18n="agent.provider.cancel">取消</span>
+          </button>
+          <button id="btn-provider-dialog-save" class="provider-dialog-btn primary">
+            <i data-lucide="save" style="width: 14px; height: 14px;"></i>
+            <span data-i18n="agent.provider.save">保存</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TTS Provider 配置弹窗 -->
+  <div id="tts-dialog-overlay" class="provider-dialog-overlay hidden">
+    <div class="provider-dialog">
+      <div class="provider-dialog-header">
+        <h3 id="tts-dialog-title">
+          <i data-lucide="volume-2" style="width: 18px; height: 18px;"></i>
+          <span data-i18n="agent.tts.addTitle">添加 TTS Provider</span>
+        </h3>
+        <button id="btn-close-tts-dialog" class="close-btn">
+          <i data-lucide="x" style="width: 18px; height: 18px;"></i>
+        </button>
+      </div>
+      <div class="provider-dialog-body">
+        <div class="provider-field">
+          <label data-i18n="agent.tts.type">TTS 类型</label>
+          <select id="tts-form-type">
+            <!-- 动态生成 -->
+          </select>
+        </div>
+        <div class="provider-field">
+          <label data-i18n="agent.tts.displayName">显示名称</label>
+          <input type="text" id="tts-form-name" data-i18n-placeholder="agent.tts.displayNamePlaceholder" placeholder="例如：我的 Fish Audio">
+        </div>
+        <div id="tts-form-config" class="agent-provider-config">
+          <!-- TTS 配置字段动态生成 -->
+        </div>
+      </div>
+      <div class="provider-dialog-footer">
+        <div id="tts-dialog-status" class="agent-provider-status hidden"></div>
+        <div class="provider-dialog-footer-right">
+          <button id="btn-tts-dialog-cancel" class="provider-dialog-btn">
+            <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+            <span data-i18n="agent.tts.cancel">取消</span>
+          </button>
+          <button id="btn-tts-dialog-save" class="provider-dialog-btn primary">
+            <i data-lucide="save" style="width: 14px; height: 14px;"></i>
+            <span data-i18n="agent.tts.save">保存</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/renderer.js"></script>
+
+  <!-- 初始化 Lucide Icons -->
+  <script>
+    // 等待 DOM 加载完成后创建所有图标
+    document.addEventListener('DOMContentLoaded', () => {
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+    });
+  </script>
+</body>
+</html>

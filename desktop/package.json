@@ -1,0 +1,126 @@
+{
+  "name": "nya-desk-pet",
+  "version": "1.0.2",
+  "description": "跨平台 Live2D 桌面宠物应用",
+  "main": "dist/main.js",
+  "scripts": {
+    "postinstall": "electron-rebuild",
+    "start": "npm run compile && electron .",
+    "dev": "npm run compile:dev && electron . --dev",
+    "dev:mac": "npm run compile:dev && DYLD_LIBRARY_PATH=\"$PWD/node_modules/sherpa-onnx-darwin-arm64:$PWD/node_modules/sherpa-onnx-darwin-x64:$DYLD_LIBRARY_PATH\" electron . --dev",
+    "dev:linux": "npm run compile:dev && LD_LIBRARY_PATH=\"$PWD/node_modules/sherpa-onnx-linux-x64:$LD_LIBRARY_PATH\" electron . --dev",
+    "dev:win": "npm run compile:dev && set \"PATH=%CD%\\node_modules\\sherpa-onnx-win32-x64;%CD%\\node_modules\\sherpa-onnx-win32-ia32;%PATH%\" && electron . --dev",
+    "build": "npm run compile && electron-builder",
+    "build:win": "npm run compile && electron-builder --win",
+    "build:mac": "npm run compile && electron-builder --mac",
+    "build:linux": "npm run compile && electron-builder --linux",
+    "compile": "tsc -p . && tsc -p renderer",
+    "compile:dev": "tsc -p . --sourceMap && tsc -p renderer --sourceMap",
+    "watch": "tsc -p . --watch",
+    "watch:renderer": "tsc -p renderer --watch",
+    "check-i18n": "node scripts/check-i18n.js",
+    "check-live2d": "node scripts/check-live2d.js",
+    "migrate-logger": "node scripts/migrate-console-to-logger.js",
+    "migrate-logger:preview": "node scripts/migrate-console-to-logger.js --dry-run",
+    "version": "node scripts/update-version.js"
+  },
+  "keywords": [
+    "electron",
+    "live2d",
+    "desktop-pet",
+    "ai",
+    "typescript"
+  ],
+  "author": "gameswu",
+  "license": "MIT",
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.2",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.10.0",
+    "@types/ws": "^8.5.10",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "axios": "^1.6.0",
+    "better-sqlite3": "^12.6.2",
+    "highlight.js": "^11.11.1",
+    "https-proxy-agent": "^7.0.6",
+    "lucide": "^0.563.0",
+    "marked": "^17.0.2",
+    "mermaid": "^11.12.2",
+    "monaco-editor": "^0.52.2",
+    "node-edge-tts": "^1.2.10",
+    "pixi-live2d-display": "^0.4.0",
+    "pixi.js": "^7.3.2",
+    "sherpa-onnx-node": "^1.12.23",
+    "ws": "^8.16.0"
+  },
+  "build": {
+    "appId": "com.nyadeskpet.app",
+    "productName": "NyaDeskPet",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/**/*",
+      "!renderer/js/*.ts",
+      "!renderer/types/**/*",
+      "models/**/*",
+      "!models/live2d/nya",
+      "plugins/**/*",
+      "!plugins/**/__pycache__/**",
+      "agent-plugins/**/*",
+      "!agent-plugins/**/__pycache__/**",
+      "assets/**/*",
+      "i18n/**/*",
+      "node_modules/sherpa-onnx-node/**/*",
+      "node_modules/sherpa-onnx-darwin-arm64/**/*",
+      "node_modules/sherpa-onnx-darwin-x64/**/*",
+      "node_modules/sherpa-onnx-linux-x64/**/*",
+      "node_modules/sherpa-onnx-win32-x64/**/*",
+      "!node_modules/sherpa-onnx-*/test",
+      "!node_modules/sherpa-onnx-*/scripts"
+    ],
+    "asarUnpack": [
+      "node_modules/sherpa-onnx-node/**/*",
+      "node_modules/sherpa-onnx-*/**/*.node",
+      "node_modules/sherpa-onnx-*/**/*.dylib",
+      "node_modules/sherpa-onnx-*/**/*.so",
+      "node_modules/sherpa-onnx-*/**/*.dll",
+      "node_modules/better-sqlite3/**/*",
+      "models/**/*",
+      "plugins/**/*",
+      "agent-plugins/**/*"
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NyaDeskPet"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Utility"
+    }
+  }
+}

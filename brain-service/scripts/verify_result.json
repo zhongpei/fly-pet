@@ -1,0 +1,51 @@
+{
+  "n": 166700,
+  "dt": 0.02,
+  "positions": true,
+  "superclass": true,
+  "baseline": {
+    "DNp01_L": 0.0,
+    "DNp01_R": 0.0,
+    "DNa02_L": 0.0,
+    "DNa02_R": 0.0,
+    "DNg100_L": 0.0,
+    "DNg100_R": 0.0,
+    "MDN_L": 0.0,
+    "MDN_R": 0.3,
+    "DNg100": 0.0,
+    "MDN": 0.2
+  },
+  "loom_delta": {
+    "DNp01_L": 25.3,
+    "DNp01_R": 0.0,
+    "DNa02_L": 0.7,
+    "DNa02_R": 0.0,
+    "DNg100_L": 0.0,
+    "DNg100_R": 0.0,
+    "MDN_L": 0.3,
+    "MDN_R": 0.0,
+    "DNg100": 0.0,
+    "MDN": 0.2
+  },
+  "chase_delta": {
+    "DNp01_L": 0.0,
+    "DNp01_R": 0.0,
+    "DNa02_L": 4.7,
+    "DNa02_R": 0.0,
+    "DNg100_L": 0.0,
+    "DNg100_R": 0.0,
+    "MDN_L": 0.0,
+    "MDN_R": 0.0,
+    "DNg100": 0.0,
+    "MDN": 0.0
+  },
+  "step_ms": {
+    "median": 2.6,
+    "mean": 2.6,
+    "p95": 3.0,
+    "max": 3.2
+  },
+  "max_steps_per_s": 378.2,
+  "loom_pop": 165,
+  "chase_pop": 135
+}

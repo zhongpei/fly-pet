@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "flypet",
+  "name": "FlyPet",
+  "description": "Default sprite character (from TonyNa-code/desktop-pet, MIT). Sprite downscaled to 384x416 frames; rows mapped to FlyPet avatar actions.",
+  "sprite": "sprite.png",
+  "preview": "preview.png",
+  "frame": { "width": 384, "height": 416 },
+  "columns": 8,
+  "states": {
+    "idle":         { "row": 0, "frames": 6, "interval": 900 },
+    "runningRight": { "row": 1, "frames": 8, "interval": 100 },
+    "runningLeft":  { "row": 2, "frames": 8, "interval": 100 },
+    "waving":       { "row": 3, "frames": 4, "interval": 160 },
+    "jumping":      { "row": 4, "frames": 5, "interval": 140 },
+    "failed":       { "row": 5, "frames": 8, "interval": 220 },
+    "running":      { "row": 6, "frames": 6, "interval": 100 },
+    "review":       { "row": 7, "frames": 6, "interval": 500 }
+  },
+  "automaticActions": [],
+  "clickActions": ["waving", "review", "jumping"]
+}

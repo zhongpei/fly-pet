@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FlyPet Brain Lab</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+                 font: 12px/1.4 -apple-system, "PingFang SC", sans-serif; color: #ddd; }
+    #scene { position: absolute; inset: 0; }
+    #panel {
+      position: absolute; top: 12px; left: 12px; width: 250px;
+      background: rgba(12,14,18,0.82); border: 1px solid #23262d;
+      border-radius: 10px; padding: 10px 12px; user-select: none;
+    }
+    #panel h1 { font-size: 13px; margin: 0 0 6px; color: #9ad1ff; letter-spacing: .4px; }
+    .row { display: flex; align-items: center; margin: 3px 0; }
+    .label { width: 74px; color: #8b93a3; }
+    .bar { flex: 1; height: 8px; background: #171a20; border-radius: 4px; overflow: hidden; }
+    .fill { height: 100%; width: 0%; background: linear-gradient(90deg,#3f8cff,#9ad1ff); }
+    .fill.hot { background: linear-gradient(90deg,#ff5f5f,#ffb45f); }
+    .val { width: 44px; text-align: right; color: #5d6675; font-variant-numeric: tabular-nums; }
+    #action { margin-top: 8px; font-size: 15px; color: #fff; }
+    #meta { color: #5d6675; margin-top: 4px; }
+    #sensor { margin-top: 8px; border-top: 1px solid #23262d; padding-top: 6px; }
+    #err { color: #ff8080; }
+  </style>
+</head>
+<body>
+  <div id="scene"></div>
+  <div id="panel">
+    <h1>FLYPET · BRAIN LAB</h1>
+    <div id="meta">connecting…</div>
+    <div id="dn-bars"></div>
+    <div id="sensor">
+      <div class="label" style="width:auto;color:#8b93a3;">descending neurons</div>
+      <div id="action">—</div>
+    </div>
+    <div id="err"></div>
+  </div>
+  <script src="vendor/three.min.js"></script>
+  <script src="vendor/OrbitControls.js"></script>
+  <script src="lab.js"></script>
+</body>
+</html>
