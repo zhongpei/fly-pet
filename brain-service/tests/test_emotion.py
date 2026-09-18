@@ -63,3 +63,24 @@ def test_speculative_gate_holds_back_groom_display():
     e2._next_display = 0.0
     st2 = e2.update(total_rate=0, sensory_energy=0.0, resting=False)
     assert st2.drives.get("display_L", 0) > 0
+
+
+def test_head_pat_soothes_and_forgives_a_poke():
+    eng = EmotionEngine(EmotionConfig(), seed=1)
+    eng.on_click()
+    eng.on_click()
+    assert eng.state.annoyance == 2
+    v_before = eng.state.valence
+    eng.on_head_pat()
+    assert eng.state.annoyance == 1            # a pat calms one poke
+    assert eng.state.valence > v_before        # and feels nice
+
+
+def test_being_held_triggers_struggle_drives():
+    eng = EmotionEngine(EmotionConfig(), seed=1)
+    v_before = eng.state.valence
+    eng.on_held()
+    st = eng.update(0.0, 0.0, resting=False)
+    assert eng.state.valence < v_before
+    assert st.drives.get("retreat_L", 0) > 0   # MDN backward: struggling
+    assert st.drives.get("threat_L", 0) > 0    # wing flick

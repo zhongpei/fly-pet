@@ -53,6 +53,8 @@ class SensoryEncoder:
         self._startle_until = -1e9
         self._touch_until = -1e9
         self._last_touch_at = -1e9
+        self._last_head_pat_at = -1e9
+        self._held = False
         self._petting = False
         self._keyboard_until = -1e9
         self._odor_on = False
@@ -74,13 +76,22 @@ class SensoryEncoder:
         elif ev.kind is SensoryKind.PET_DOUBLE_CLICK:
             self._startle_until = now() + cfg.startle_hold
         elif ev.kind is SensoryKind.PET_CLICK:
-            if now() - self._last_touch_at >= cfg.touch_refractory:
+            gap = now() - self._last_touch_at
+            if gap >= cfg.touch_refractory:
                 self._touch_until = now() + cfg.touch_hold
                 self._last_touch_at = now()
+                if ev.cls == "head":       # head tap: gentle social contact
+                    self._last_head_pat_at = now()
+            elif gap < 0.35:               # rapid re-tap inside refractory: startle
+                self._startle_until = now() + cfg.startle_hold
         elif ev.kind is SensoryKind.PET_LONG_PRESS:
             self._petting = True
         elif ev.kind is SensoryKind.PET_LONG_RELEASE:
             self._petting = False
+        elif ev.kind is SensoryKind.PET_HELD:
+            self._held = True              # grabbed: strong sustained contact
+        elif ev.kind is SensoryKind.PET_HELD_RELEASE:
+            self._held = False
         elif ev.kind is SensoryKind.PET_DRAG:
             self._touch_until = now() + cfg.touch_hold
         elif ev.kind is SensoryKind.OBJECT_APPEAR:
@@ -114,7 +125,10 @@ class SensoryEncoder:
             side = self._loom_side if self._loom_side in ("L", "R") else "L"
             out.append((f"loom_{side}", self._loom_strength))
 
-        if t < self._touch_until:
+        if self._held:
+            out.append(("touch_L", 0.8))   # being grabbed: strong bilateral touch
+            out.append(("touch_R", 0.8))
+        elif t < self._touch_until:
             out.append(("touch_L", cfg.touch_strength))
             out.append(("touch_R", cfg.touch_strength))
         elif self._petting:
@@ -141,11 +155,21 @@ class SensoryEncoder:
     def mouse_side(self) -> str:
         return self._mouse_side
 
+    def mouse_x(self) -> float:
+        """Normalized cursor x in [-1, 1], 0.0 when the mouse was never seen."""
+        return self._mouse_x if self._mouse_x is not None else 0.0
+
     def recent_touch(self, within: float = 2.0) -> bool:
         return now() - self._last_touch_at < within
 
     def petting(self) -> bool:
         return self._petting
+
+    def held(self) -> bool:
+        return self._held
+
+    def head_pat_recent(self, within: float = 1.5) -> bool:
+        return now() - self._last_head_pat_at < within
 
     def object_class(self) -> str:
         return self._object_cls if self._odor_on else ""

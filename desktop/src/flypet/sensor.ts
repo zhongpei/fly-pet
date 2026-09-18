@@ -10,6 +10,7 @@ export interface SensoryMsg {
   side?: 'L' | 'R' | 'C';
   x?: number;
   speed?: number;
+  cls?: string;   // touch semantics: head | body
   ts: number;
 }
 

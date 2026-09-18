@@ -23,6 +23,22 @@
     #meta { color: #5d6675; margin-top: 4px; }
     #sensor { margin-top: 8px; border-top: 1px solid #23262d; padding-top: 6px; }
     #err { color: #ff8080; }
+    /* embed=1: 桌宠右下角的小浮窗模式 —— 透明窗口 + 圆角暗色卡片，隐藏信息面板 */
+    body.embed { background: transparent; }
+    body.embed #scene {
+      inset: 4px;
+      background: rgba(8, 10, 14, 0.66);
+      border: 1px solid rgba(122, 162, 255, 0.22);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    body.embed #panel { display: none; }
+    #mini {
+      position: absolute; left: 12px; bottom: 10px; display: none; z-index: 5;
+      font-size: 11px; color: #9ad1ff; letter-spacing: .3px;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .8);
+    }
+    body.embed #mini { display: block; }
   </style>
 </head>
 <body>
@@ -38,6 +54,10 @@
     </div>
     <div id="err"></div>
   </div>
+  <div id="mini">—</div>
+  <script>
+    if (new URLSearchParams(location.search).has('embed')) document.body.className = 'embed';
+  </script>
   <script src="vendor/three.min.js"></script>
   <script src="vendor/OrbitControls.js"></script>
   <script src="lab.js"></script>

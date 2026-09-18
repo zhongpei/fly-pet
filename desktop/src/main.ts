@@ -72,12 +72,143 @@ if (sherpaPackageName) {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let brainLabWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting: boolean = false;
 const isDev: boolean = process.argv.includes('--dev');
 
 // 插件进程管理
 const pluginProcesses: Map<string, ChildProcess> = new Map();
+
+// FlyPet 模式注入参考前端的 CSS：隐藏它自己的外壳（顶栏/底栏/聊天/设置/面板），
+// 只保留中央的角色。顶栏缩成一条 20px 的隐形拖拽条（-webkit-app-region: drag
+// 仍然生效），窗口照常可以用鼠标按住人物上方拖动。
+const FLYPET_CHROME_CSS = `
+#bottom-bar, #btn-toggle-ui, #chat-window, #settings-panel, #plugins-panel,
+#agent-panel, .modal, .provider-dialog-overlay, #camera-preview-container {
+  display: none !important;
+}
+#top-bar {
+  height: 20px !important;
+  background: transparent !important;
+  border-bottom: none !important;
+  backdrop-filter: none !important;
+}
+#top-bar > * { display: none !important; }
+`;
+
+// FlyPet 注入参考页面的触觉路由：
+//   按住角色 >=600ms      -> petting（pet_long_press / pet_long_release）
+//   单击模型包围盒上部 38% -> 摸头（cls=head，安抚），下部 -> 戳身体（cls=body）
+//   双击                  -> 由大脑侧升级为惊跳（两次 pet_click <350ms）
+// 全部走 flypet IPC，并吞掉 click 冒泡（manager 自己的 tap_event 对这个模型
+// 只会报 'unknown'——mao_pro 的 hitArea 没绑定 moc drawable，且会造成双计）。
+const FLYPET_TOUCH_JS = `(() => {
+  if (window.__flypetTouch) return;
+  window.__flypetTouch = true;
+  const canvas = document.getElementById('live2d-canvas');
+  const api = window.electronAPI && window.electronAPI.flypet;
+  if (!canvas || !api) return;
+  let timer = 0;
+  let longPress = false;
+  let justPetted = 0;
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    longPress = false;
+    timer = setTimeout(() => {
+      longPress = true;
+      api.sensory('pet_long_press');
+    }, 600);
+  });
+  const end = () => {
+    if (timer) { clearTimeout(timer); timer = 0; }
+    if (longPress) {
+      longPress = false;
+      api.sensory('pet_long_release');
+      justPetted = Date.now();
+    }
+  };
+  canvas.addEventListener('pointerup', end);
+  canvas.addEventListener('pointercancel', end);
+  canvas.addEventListener('pointerleave', end);
+  document.addEventListener('click', (e) => {
+    if (justPetted && Date.now() - justPetted < 400) {
+      e.stopPropagation(); e.preventDefault();   // a finished pet is not a poke
+      return;
+    }
+    let cls = 'body';
+    const m = window.live2dManager && window.live2dManager.model;
+    if (m && m.getBounds) {
+      const b = m.getBounds();
+      if (e.clientX >= b.x && e.clientX <= b.x + b.width &&
+          e.clientY >= b.y && e.clientY <= b.y + b.height) {
+        cls = e.clientY < b.y + b.height * 0.38 ? 'head' : 'body';
+      }
+    }
+    api.tap(cls);
+    e.stopPropagation();
+  }, true);
+})();`;
+
+// Brain Lab 浮窗：加载 brain-service 的 /lab/?embed=1（透明圆角卡片模式），
+// 无边框、置顶，始终锚在宠物窗口的右下角并跟随它移动。
+function brainLabHttpBase(): string {
+  const wsUrl = process.env.FLYPET_BRAIN_URL || 'ws://127.0.0.1:8020/ws';
+  const m = /^ws:\/\/([^/]+)\//.exec(wsUrl);
+  return m ? `http://${m[1]}` : 'http://127.0.0.1:8020';
+}
+
+function positionBrainLab(): void {
+  if (!mainWindow || mainWindow.isDestroyed() || !brainLabWindow || brainLabWindow.isDestroyed()) return;
+  const b = mainWindow.getBounds();
+  const lb = brainLabWindow.getBounds();
+  const { workArea } = screen.getPrimaryDisplay();
+  const x = Math.min(Math.max(workArea.x, b.x + b.width - lb.width + 36),
+                     workArea.x + workArea.width - lb.width);
+  const y = Math.min(Math.max(workArea.y, b.y + b.height - lb.height + 28),
+                     workArea.y + workArea.height - lb.height);
+  brainLabWindow.setPosition(x, y);
+}
+
+function createBrainLabWindow(): void {
+  if (brainLabWindow) return;
+  brainLabWindow = new BrowserWindow({
+    width: 220,
+    height: 176,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false
+    }
+  });
+  brainLabWindow.setAlwaysOnTop(true, 'modal-panel'); // 压在宠物窗口之上
+  const loadLab = () => brainLabWindow?.loadURL(`${brainLabHttpBase()}/lab/?embed=1`);
+  loadLab();
+  // brain-service 可能还没启动，失败则每 2s 重试（最多 15 次）
+  let labRetries = 0;
+  brainLabWindow.webContents.on('did-fail-load', () => {
+    if (!brainLabWindow || brainLabWindow.isDestroyed()) return;
+    if (labRetries++ < 15) setTimeout(loadLab, 2000);
+  });
+  // 跟随宠物窗口移动（行走器会频繁 setPosition，节流 80ms）
+  let moveTimer: NodeJS.Timeout | null = null;
+  mainWindow?.on('move', () => {
+    if (moveTimer) return;
+    moveTimer = setTimeout(() => { moveTimer = null; positionBrainLab(); }, 80);
+  });
+  mainWindow?.on('resize', () => positionBrainLab());
+  mainWindow?.on('closed', () => {
+    if (brainLabWindow && !brainLabWindow.isDestroyed()) brainLabWindow.close();
+    brainLabWindow = null;
+  });
+  positionBrainLab();
+}
 
 // UI状态追踪
 let isUIVisible: boolean = true;
@@ -117,14 +248,24 @@ function createWindow(): void {
     // FlyPet 模式：直接运行参考项目自己的前端（index.html 全家桶），
     // 大脑服务冒充它的后端（agent:get-url 返回 brain-service 地址）；
     // 光标传感器与窗口行走器仍由 flypet/link 驱动。--sprite 切精灵页。
+    const spriteMode = process.argv.includes('--sprite');
     mainWindow.setBounds({ width: 520, height: 700, x: 120, y: screen.getPrimaryDisplay().workArea.height - 720 });
-    if (process.argv.includes('--sprite')) {
+    if (spriteMode) {
       mainWindow.loadFile('renderer/flypet.html');
-      stopFlyPetLink = startFlyPetLink(() => mainWindow);
     } else {
       mainWindow.loadFile('renderer/index.html');
-      stopFlyPetLink = startFlyPetLink(() => mainWindow);
+      // 只保留角色：页面每次加载完成后注入 CSS，隐藏参考前端的外壳；
+      // 同时注入抚摸检测（按住 600ms = petting，走 flypet:sensory IPC）
+      mainWindow.webContents.on('did-finish-load', () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          void mainWindow.webContents.insertCSS(FLYPET_CHROME_CSS);
+          void mainWindow.webContents.executeJavaScript(FLYPET_TOUCH_JS).catch(() => {});
+        }
+      });
     }
+    stopFlyPetLink = startFlyPetLink(() => mainWindow);
+    // Brain Lab 浮窗挂在人物右下角（精灵页同样适用）
+    createBrainLabWindow();
   } else {
     mainWindow.loadFile('renderer/index.html');
   }

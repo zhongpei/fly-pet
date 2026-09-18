@@ -156,3 +156,43 @@ def test_avoid_interrupts_interact():
     enc.feed(SensoryEvent(kind=SensoryKind.PET_CLICK))
     action, _ = settle(dec, act(DNp01_R=40.0))
     assert action is BrainAction.AVOID
+
+
+def test_move_left_has_negative_direction():
+    enc, dec = make_decoder()
+    settle(dec, act(DNa02_L=10.0, DNa02_R=0.0))
+    assert dec.state.params["dir"] == -1.0
+
+
+def test_avoid_flees_away_from_the_cursor():
+    enc, dec = make_decoder()
+    enc.feed(SensoryEvent(kind=SensoryKind.MOUSE_MOVE, x=0.8))   # cursor right
+    dec.update(act(DNp01_L=40.0))                                # -> JUMP
+    dec.state.dn01_since = time.monotonic() - 0.5                # sustained
+    dec.update(act(DNp01_L=40.0))                                # -> AVOID
+    assert dec.state.params["dir"] == -1.0                       # flees left
+
+
+def test_approach_walks_toward_the_cursor():
+    enc, dec = make_decoder()
+    enc.feed(SensoryEvent(kind=SensoryKind.MOUSE_MOVE, x=-0.7))  # cursor left
+    settle(dec, act(DNg100=15.0))
+    assert dec.state.params["dir"] == -1.0
+
+
+def test_wander_keeps_its_chosen_direction():
+    enc, dec = make_decoder()
+    dec.state.wander_until = time.monotonic() + 10.0   # a stroll is in progress
+    settle(dec, act())
+    assert dec.state.action is BrainAction.WANDER
+    d1 = dec.state.params["dir"]
+    assert d1 in (-1.0, 1.0)
+    for _ in range(3):
+        dec.update(act())
+        assert dec.state.params["dir"] == d1     # strolls, doesn't zigzag
+
+
+def test_idle_direction_is_zero():
+    enc, dec = make_decoder()
+    dec.update(act())
+    assert dec.state.params["dir"] == 0.0

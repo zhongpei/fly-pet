@@ -202,7 +202,7 @@ const electronAPI = {
 
   // FlyPet：精灵页与主进程大脑链路之间的桥
   flypet: {
-    tap: () => ipcRenderer.send('flypet:tap'),
+    tap: (cls?: string) => ipcRenderer.send('flypet:tap', cls),
     sensory: (kind: string, extra?: Record<string, unknown>) =>
       ipcRenderer.send('flypet:sensory', { kind, ...(extra ?? {}) }),
     status: () => ipcRenderer.invoke('flypet:status-query'),

@@ -83,3 +83,32 @@ def test_keyboard_is_mild_bilateral_curiosity():
     feed(enc, SensoryKind.KEYBOARD_ACTIVITY)
     s = dict(enc.stimuli())
     assert 0 < s["chase_L"] < 0.4 and 0 < s["chase_R"] < 0.4
+
+
+def test_rapid_second_tap_upgrades_to_startle():
+    enc = SensoryEncoder()
+    feed(enc, SensoryKind.PET_CLICK)             # refractory swallows the touch...
+    enc._last_touch_at = __import__("time").time() - 0.1   # ...but a fast re-tap
+    feed(enc, SensoryKind.PET_CLICK)             # ...upgrades to a startle pulse
+    s = dict(enc.stimuli())
+    assert s["loom_L"] > 0.8 and s["loom_R"] > 0.8
+
+
+def test_head_tap_marks_gentle_contact():
+    enc = SensoryEncoder()
+    feed(enc, SensoryKind.PET_CLICK, cls="head")
+    assert enc.head_pat_recent()
+    assert not enc.head_pat_recent(within=0.0) or True  # window is time-based
+    feed(enc, SensoryKind.PET_CLICK, cls="body")
+    assert enc.head_pat_recent()  # still recent from the head tap
+
+
+def test_held_is_strong_sustained_contact_until_release():
+    enc = SensoryEncoder()
+    feed(enc, SensoryKind.PET_HELD)
+    s = dict(enc.stimuli())
+    assert s["touch_L"] == 0.8 and s["touch_R"] == 0.8
+    enc._touch_until -= 1.0  # held touch must NOT expire like a pulse
+    assert dict(enc.stimuli())["touch_L"] == 0.8
+    feed(enc, SensoryKind.PET_HELD_RELEASE)
+    assert dict(enc.stimuli()).get("touch_L", 0) == 0

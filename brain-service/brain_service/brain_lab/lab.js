@@ -24,21 +24,30 @@ const CH_COLORS = {
 
 // ---- three.js scene ---------------------------------------------------------
 
+const EMBED = new URLSearchParams(location.search).has('embed');
+
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2(0x000000, 0.004);
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 5000);
-camera.position.set(0, 60, 260);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
+// embed 小窗时把镜头拉远一点，给脑子留出边距
+camera.position.set(0, 60, EMBED ? 300 : 260);
+// alpha: embed 模式下窗口透明，透出 index.html 里的圆角暗色卡片
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setClearColor(0x000000, 0);
+const view = document.getElementById('scene');
+function fit() {
+  const w = view.clientWidth || innerWidth;
+  const h = view.clientHeight || innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+fit();
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-document.getElementById('scene').appendChild(renderer.domElement);
+view.appendChild(renderer.domElement);
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
+addEventListener('resize', fit);
 
 function pointsCloud(positions, color, size, opacity) {
   const geo = new THREE.BufferGeometry();
@@ -183,6 +192,8 @@ function connect() {
       const emo = msg.emotion ?? {};
       document.getElementById('emotion').textContent =
         `emotion ${emo.expression ?? '—'} · val ${(emo.valence ?? 0).toFixed(2)} · aro ${(emo.arousal ?? 0).toFixed(2)}`;
+      const mini = document.getElementById('mini');
+      if (mini) mini.textContent = `${msg.action} · ${emo.expression ?? '—'}`;
       document.getElementById('err').textContent = msg.error ?? '';
     }
   };

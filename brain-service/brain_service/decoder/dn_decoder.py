@@ -68,6 +68,7 @@ class DecoderState:
     idle_since: float = 0.0
     wander_until: float = 0.0
     wander_dir: float = 1.0
+    escape_dir: float = 1.0            # last non-centred mouse side, for escapes
     params: dict[str, float] = field(default_factory=dict)
 
 
@@ -138,7 +139,6 @@ class ActionDecoder:
             st.smoothed[k] = prev + cfg.ema * (v - prev)
         smooth_total = sum(st.smoothed.values())
         self._update_params(st, smooth_total)
-
         want = self._evaluate(st.smoothed, smooth_total, t)
         urgent = want in (BrainAction.AVOID, BrainAction.JUMP, BrainAction.THREAT, BrainAction.BACK)
 
@@ -175,4 +175,33 @@ class ActionDecoder:
             "speed": max(0.0, min(1.0, s.get("DNg100", 0.0) / 30.0)),
             "head_angle": max(-25.0, min(25.0, (s.get("DNa02_L", 0.0) - s.get("DNa02_R", 0.0)) * 1.2)),
             "intensity": max(0.0, min(1.0, smooth_total / 120.0)),
+            "dir": self._direction(st),
         }
+
+    def _direction(self, st: DecoderState) -> float:
+        """Signed walk direction in {-1, 0, +1}: THE single source of truth for
+        both the window walker and the model's body lean/rotation, so the body
+        can never lean against the direction the window travels.
+        APPROACH moves toward the cursor, escapes away, WANDER keeps the
+        direction it picked when the stroll started."""
+        a, enc = st.action, self.encoder
+        mx = enc.mouse_x()
+        toward = 1.0 if mx > 0.05 else -1.0 if mx < -0.05 else 0.0
+
+        if a is BrainAction.MOVE_LEFT:
+            return -1.0
+        if a is BrainAction.MOVE_RIGHT:
+            return 1.0
+        if a is BrainAction.APPROACH:
+            return toward
+        if a in (BrainAction.AVOID, BrainAction.JUMP, BrainAction.BACK):
+            if toward != 0.0:
+                st.escape_dir = toward
+            return -st.escape_dir
+        if a is BrainAction.WANDER:
+            return st.wander_dir
+        if a is BrainAction.TURN_AWAY:
+            if toward != 0.0:
+                st.escape_dir = toward
+            return -st.escape_dir   # face away from the cursor
+        return 0.0

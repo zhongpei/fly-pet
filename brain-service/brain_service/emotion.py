@@ -65,6 +65,22 @@ class EmotionEngine:
         self.state.annoyance = len(self._click_times)
         self.add_valence(-0.05)  # each poke stings a little
 
+    def on_head_pat(self) -> None:
+        """A tap on the head: social grooming contact. Soothing - the opposite
+        of a body poke (valence up, one annoyance click forgiven)."""
+        t = now()
+        if self._click_times:
+            self._click_times.pop(0)   # a pat calms one poke of irritation
+        self.state.annoyance = len(self._click_times)
+        self.add_valence(0.12)
+        self._hold("_groom", 1.2)      # a little face-rub reaction
+
+    def on_held(self) -> None:
+        """Grabbed: strong aversive contact, then resignation."""
+        self.add_valence(-0.15)
+        self._hold("_retreat", 0.9)    # struggle (MDN backward walking)
+        self._hold("_threat", 0.6)     # and a wing flick
+
     def on_petting(self, active: bool) -> None:
         self._petting = active
         self._petting_since = now() if active else None

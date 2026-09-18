@@ -17,26 +17,40 @@ from __future__ import annotations
 
 import time
 
-# BrainAction avatar name -> [motion group, index] (mao_pro: Idle + 6 generic)
+# Motion mapping, decoded from the actual motion files (docs/connection-plan.md):
+#   mtn_01 = gentle idle/breathing loop (group "Idle")
+#   mtn_02 = both arms raised, cheer/display (3.5s)
+#   mtn_03 = head-shake wiggle (4.4s)
+#   mtn_04 = arm swat + hat flourish (4.2s)
+#   special_01..03 = 7.8-9.4s magic performances (explosion/heart/rabbit) — too
+#     long and theatrical for locomotion; reserved, not mapped.
+# Moving behaviours get NO gesture (the model has no walk cycle): the window
+# step + AllY bob + physics sway carry the movement, exactly like the original
+# NyaDeskPet, whose pet never moves at all. Only stationary behaviours act.
 ACTION_MOTION: dict[str, tuple[str, int]] = {
     "idle": ("Idle", 0),
     "sleep": ("Idle", 0),
     "rest": ("Idle", 0),
-    "look": ("", 1),
-    "waving": ("", 0),
-    "walk": ("", 2),
-    "walk_left": ("", 2),
-    "walk_right": ("", 2),
-    "approach": ("", 2),
-    "run": ("", 3),
-    "jump": ("", 3),
-    "threat": ("", 3),
-    "back": ("", 4),
-    "groom": ("", 4),
-    "wander": ("", 5),
-    "turn_away": ("", 5),
-    "display": ("", 0),
+    "look": ("Idle", 0),          # looking is done by the head/eye params
+    "waving": ("", 0),            # INTERACT: arms-up cheer
+    "walk": ("Idle", 0),
+    "walk_left": ("Idle", 0),
+    "walk_right": ("Idle", 0),
+    "approach": ("Idle", 0),
+    "run": ("Idle", 0),
+    "jump": ("Idle", 0),          # the Explosion parameter flash is the startle
+    "threat": ("", 2),            # mtn_04: aggressive swat
+    "back": ("Idle", 0),
+    "groom": ("", 1),             # mtn_03: wiggle-clean
+    "wander": ("Idle", 0),
+    "turn_away": ("Idle", 0),     # turns via the AllRotate parameter instead
+    "display": ("", 0),           # mtn_02: wings/arms-up display
 }
+
+# One-shot gestures must interrupt whatever is playing (pixi-live2d-display
+# priority 3 = FORCE); idle-ish switches stay at NORMAL (2) and simply lose if
+# a gesture is mid-flight.
+GESTURE_AVATARS = {"waving", "threat", "groom", "display"}
 
 EXPRESSION_FILE: dict[str, str] = {
     "neutral": "exp_01",
@@ -59,10 +73,71 @@ EMOTION_EXTRAS: dict[str, list[tuple[str, float]]] = {
     "sleepy": [("ParamMouthOpenY", 0.05)],
 }
 
+# ---- dialogue: the brain speaks its state (rendered by the reference bubble) --
+ACTION_LINES: dict[str, list[str]] = {
+    "MOVE_LEFT": ["往这边走走", "咦，那边有什么"],
+    "MOVE_RIGHT": ["往那边逛逛", "溜达溜达～"],
+    "APPROACH": ["让我看看～", "靠近一点"],
+    "AVOID": ["好险好险！", "别过来！"],
+    "LOOK": ["在看什么呢", "嗯？"],
+    "INTERACT": ["一起玩吧！", "嘿嘿～"],
+    "REST": ["累了，歇一会儿", "zzz……"],
+    "JUMP": ["呀！！", "吓我一跳！"],
+    "BACK": ["退后、退后", "离我远一点"],
+    "THREAT": ["别戳我！", "哼！生气了！"],
+    "WING_DISPLAY": ["听我唱歌：嗡嗡嗡", "看我的翅膀～"],
+    "GROOM": ["理理毛，梳梳妆", "干干净净最重要"],
+    "TURN_AWAY": ["哼，不想理你了", "（转过身去）"],
+    "WANDER": ["随便逛逛～", "那边好像有味道"],
+}
+
+# event lines (touch feelings), sent once when the event starts
+EVENT_LINES: dict[str, list[str]] = {
+    "head_pat": ["再摸摸~", "呼……好舒服"],
+    "petting": ["……好舒服，别停", "呼噜呼噜……"],
+    "held": ["哇！放开我！", "救命，被抓到了！"],
+}
+
+# ---- magic effects: one-shot param flashes (blend+duration auto-reverts) ------
+# avatar name -> [(param id, value, duration s)]  (mao_pro effect parameter sets)
+EFFECT_PARAMS: dict[str, list[tuple[str, float, float]]] = {
+    "jump": [("ParamExplosionOn", 1.0, 0.7), ("ParamExplosion", 1.0, 0.7)],
+    "threat": [("ParamStrengthenLightOn", 1.0, 1.1), ("ParamStrengthenLight", 1.0, 1.1)],
+    "display": [("ParamAuraOn", 1.0, 1.4), ("ParamAura", 1.0, 1.4)],
+    "run": [("ParamSmokeOn", 1.0, 0.6), ("ParamSmoke", 1.0, 0.6)],
+}
+# petting a fly feels good: the heart-heal spell
+PET_HEART: list[tuple[str, float, float]] = [
+    ("ParamHeartHealOn", 1.0, 1.5), ("ParamHeartDrow", 1.0, 1.5), ("ParamHeartSize", 1.0, 1.5),
+]
+
+
+def effect_command(avatar: str) -> dict | None:
+    spec = EFFECT_PARAMS.get(avatar)
+    if not spec:
+        return None
+    return {"command": "parameter",
+            "parameters": [{"id": pid, "value": v, "blend": 1.0, "duration": d}
+                           for pid, v, d in spec]}
+
+
+def heart_command() -> dict:
+    return {"command": "parameter",
+            "parameters": [{"id": pid, "value": v, "blend": 1.0, "duration": d}
+                           for pid, v, d in PET_HEART]}
+
+
+def dialogue_line(action: str) -> str:
+    """Pick a line for an action ("" if the action has nothing to say)."""
+    import random
+    lines = ACTION_LINES.get(action)
+    return random.choice(lines) if lines else ""
+
 
 def motion_command(avatar: str) -> dict:
     group, index = ACTION_MOTION.get(avatar, ("Idle", 0))
-    return {"command": "motion", "group": group, "index": index, "priority": 2}
+    priority = 3 if avatar in GESTURE_AVATARS else 2
+    return {"command": "motion", "group": group, "index": index, "priority": priority}
 
 
 def expression_command(expr: str) -> dict:
@@ -76,25 +151,34 @@ def emotion_param_command(expr: str) -> dict:
 
 
 def param_command(action: str, params: dict, t: float | None = None) -> dict:
-    """Continuous batch: head turn + eye gaze + walking bob/lean.
+    """Continuous batch: head turn + eye gaze + walking bob/lean/turn.
+
+    Movement direction comes from params["dir"] (the decoder's signed {-1,0,1}
+    output) — the SAME source the window walker uses, so the body can never
+    lean against the direction of travel. The bob is kept below 4.5 Hz because
+    the parameter stream runs at 10 Hz (anything faster aliases into noise).
 
     t=None means stationary batching (no walk oscillation)."""
     t = time.monotonic() if t is None else t
     speed = max(0.15, min(1.0, params.get("speed") or 0.0))
     head = max(-25.0, min(25.0, params.get("head_angle") or 0.0))
-    moving = action in MOVING_ACTIONS
+    dirn = 1 if params.get("dir", 0) > 0 else -1 if params.get("dir", 0) < 0 else 0
     out = [
         {"id": "ParamAngleX", "value": head, "blend": 0.4, "duration": 0.1},
         {"id": "ParamEyeBallX", "value": head / 25.0, "blend": 0.4, "duration": 0.1},
     ]
-    if moving:
-        rate = 5.5 + 7 * speed
-        bob = abs((t * rate) % 2 - 1)          # triangle bob 0..1
-        lean = 1.0 if head >= 0 else -1.0
+    if action == "turn_away" and dirn != 0:
+        # no window movement: turn the body away from the cursor instead
+        out.append({"id": "ParamAllRotate", "value": dirn * 10.0, "blend": 0.6, "duration": 0.3})
+        return {"command": "parameter", "parameters": out}
+    if action in MOVING_ACTIONS and dirn != 0:
+        rate = 2.2 + 2.3 * speed                     # 2.5-4.5 Hz step/bob rate
+        bob = abs((t * rate) % 2 - 1)                # triangle bob 0..1
         out += [
-            {"id": "ParamAllY", "value": -bob * (1.5 + 2.5 * speed), "blend": 0.5, "duration": 0.1},
-            {"id": "ParamAllX", "value": lean * (2.5 + 4 * speed), "blend": 0.5, "duration": 0.1},
-            {"id": "ParamBodyAngleZ", "value": lean * (2 + 3 * speed), "blend": 0.5, "duration": 0.1},
+            {"id": "ParamAllY", "value": -bob * (2.5 + 3.0 * speed), "blend": 0.5, "duration": 0.1},
+            {"id": "ParamAllX", "value": dirn * (3.0 + 4.0 * speed), "blend": 0.5, "duration": 0.1},
+            {"id": "ParamBodyAngleZ", "value": dirn * (2.5 + 3.5 * speed), "blend": 0.5, "duration": 0.1},
+            {"id": "ParamAllRotate", "value": dirn * (3.0 + 2.0 * speed), "blend": 0.5, "duration": 0.1},
         ]
     return {"command": "parameter", "parameters": out}
 

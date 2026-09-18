@@ -45,6 +45,7 @@ class BrainRunner(threading.Thread):
         self.backend: BrainBackend = MockBackend() if backend_name == "mock" else None
         self.telemetry = Telemetry()
         self._lock = threading.Lock()
+        self._outbox: list[dict] = []   # one-shot renderer payloads (dialogue/effects)
         self._snap: dict = {
             "action": "IDLE", "rates": {}, "fired": 0, "sim_t": 0.0,
             "steps_per_s": 0.0, "load": 0.0, "ready": backend_name == "mock",
@@ -125,18 +126,43 @@ class BrainRunner(threading.Thread):
             self.encoder.feed(ev)
             self._emotion_event(ev)
 
+    def drain_outbox(self) -> list[dict]:
+        """One-shot renderer payloads queued by sensory events (thread-safe)."""
+        with self._lock:
+            out, self._outbox = self._outbox, []
+        return out
+
+    def _say(self, key: str) -> None:
+        lines = nya_map.EVENT_LINES.get(key)
+        if lines:
+            import random
+            self._outbox.append({"kind": "dialogue", "text": random.choice(lines)})
+
     def _emotion_event(self, ev: SensoryEvent) -> None:
         """Route affect-relevant events into the emotion engine."""
         from .protocol import SensoryKind as K
 
         emo = self.emotion
-        if ev.kind is K.PET_CLICK or ev.kind is K.PET_DOUBLE_CLICK:
+        if ev.kind is K.PET_CLICK:
+            if ev.cls == "head":
+                emo.on_head_pat()
+                self._say("head_pat")
+            else:
+                emo.on_click()
+        elif ev.kind is K.PET_DOUBLE_CLICK:
             emo.on_click()
         elif ev.kind is K.PET_LONG_PRESS:
             emo.on_petting(True)
+            self._outbox.append({"kind": "effect", "data": nya_map.heart_command()})
+            self._say("petting")
         elif ev.kind is K.PET_LONG_RELEASE:
             emo.on_petting(False)
             emo.add_valence(0.25)  # a finished petting session feels good
+        elif ev.kind is K.PET_HELD:
+            emo.on_held()
+            self._say("held")
+        elif ev.kind is K.PET_HELD_RELEASE:
+            emo.add_valence(0.05)  # calm again once put down
         elif ev.kind is K.MOUSE_APPROACH:
             emo.add_valence(-0.18)
         elif ev.kind is K.OBJECT_APPEAR:
@@ -190,13 +216,12 @@ def make_app(runner: BrainRunner) -> web.Application:
                             print(f"[flypet] renderer model_info: exprs={len(info.get('expressions', []))} "
                                   f"hitAreas={info.get('hitAreas')}", flush=True)
                     elif mtype == "tap_event":
-                        # Live2D hit-area tap from the reference renderer
-                        part = (data.get("data") or {}).get("hitArea", "")
-                        print(f"[flypet] tap_event part={part}", flush=True)
-                        try:
-                            runner.feed_event(SensoryEvent.from_message({"kind": "pet_click", "side": "C"}))
-                        except (KeyError, ValueError):
-                            pass
+                        # Manager-level hit-area taps are log-only: mao_pro's
+                        # hit areas are not bound in the moc (always 'unknown'),
+                        # so real head/body routing happens in the desktop shell
+                        # (geometric, FLYPET_TOUCH_JS) and arrives via pet_click.
+                        part = str((data.get("data") or {}).get("hitArea", ""))
+                        print(f"[flypet] tap_event (log-only) part={part or '?'}", flush=True)
                     elif mtype == "user_input":
                         pass  # chat text: not a V1 sensory channel
                 elif msg.type == WSMsgType.ERROR:
@@ -210,6 +235,8 @@ def make_app(runner: BrainRunner) -> web.Application:
     async def broadcaster(app: web.Application) -> None:
         last_action: dict[web.WebSocketResponse, str] = {}
         last_expression: dict[web.WebSocketResponse, str] = {}
+        last_line = ""            # dialogue throttle: don't repeat or spam
+        line_at = 0.0
         while True:
             snap = runner.snapshot()
             payload_rates = {k: round(v, 1) for k, v in snap.get("rates", {}).items()}
@@ -224,9 +251,12 @@ def make_app(runner: BrainRunner) -> web.Application:
                         continue
                     try:
                         if last_action.get(c) != action:
+                            avatar = AVATAR_ACTION_MAP.get(action, "idle")
                             await c.send_json({"type": "live2d",
-                                               "data": nya_map.motion_command(
-                                                   AVATAR_ACTION_MAP.get(action, "idle"))})
+                                               "data": nya_map.motion_command(avatar)})
+                            effect = nya_map.effect_command(avatar)
+                            if effect:
+                                await c.send_json({"type": "live2d", "data": effect})
                             last_action[c] = action
                         if last_expression.get(c) != expr:
                             await c.send_json({"type": "live2d",
@@ -241,6 +271,27 @@ def make_app(runner: BrainRunner) -> web.Application:
                     except Exception:  # noqa: BLE001 - one dead client must not stop the rest
                         clients.pop(c, None)
 
+                renderers = [c for c, role in clients.items() if role == "renderer"]
+                # event-triggered one-shots (petting hearts, held protests, ...)
+                outbox = runner.drain_outbox()
+                if outbox and renderers:
+                    for item in outbox:
+                        msg = ({"type": "dialogue", "data": {"text": item["text"],
+                                                             "duration": 2600}}
+                               if item["kind"] == "dialogue"
+                               else {"type": "live2d", "data": item["data"]})
+                        await asyncio.gather(*(c.send_json(msg) for c in renderers),
+                                             return_exceptions=True)
+                # a line for the new action, at most every 4 s, no repeats
+                if action != "IDLE" and time.monotonic() - line_at > 4.0:
+                    line = nya_map.dialogue_line(action)
+                    if line and line != last_line and renderers:
+                        last_line, line_at = line, time.monotonic()
+                        await asyncio.gather(*(
+                            c.send_json({"type": "dialogue",
+                                         "data": {"text": line, "duration": 2600}})
+                            for c in renderers), return_exceptions=True)
+
                 legacy = [c for c, role in clients.items() if role == "lab"]
                 if legacy:
                     if action != last_action.get("lab"):
@@ -249,7 +300,8 @@ def make_app(runner: BrainRunner) -> web.Application:
                                  "expression": expr,
                                  "intensity": params.get("intensity", 0.0),
                                  "params": {"speed": params.get("speed", 0.0),
-                                            "head_angle": params.get("head_angle", 0.0)},
+                                            "head_angle": params.get("head_angle", 0.0),
+                                            "dir": params.get("dir", 0.0)},
                                  "ts": time.time()}
                         await asyncio.gather(*(c.send_json(state) for c in legacy),
                                              return_exceptions=True)

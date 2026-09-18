@@ -54,6 +54,8 @@ class SensoryKind(str, Enum):
     PET_LONG_PRESS = "pet_long_press"      # petting (while held)
     PET_LONG_RELEASE = "pet_long_release"  # petting ended
     PET_DRAG = "pet_drag"            # user drags the pet around
+    PET_HELD = "pet_held"            # user grabbed the pet (dragging the window)
+    PET_HELD_RELEASE = "pet_held_release"  # put back down
     OBJECT_APPEAR = "object_appear"  # virtual object; cls = food|rival|toy
     OBJECT_REMOVE = "object_remove"
     KEYBOARD_ACTIVITY = "keyboard_activity"  # mild curiosity

@@ -14,12 +14,18 @@ import { CursorSensor, Rect, SensoryMsg } from './sensor';
 const RECONNECT_MS = 2000;
 const POLL_MS = 80;
 
-/** Window velocity (px/s) per action; speed-scaled where the brain says so. */
-const WALK_SPEED: Record<string, number> = {
-  MOVE_LEFT: -130,
+/** Window speed magnitude (px/s) per moving action, before the speed scalar.
+ *  DIRECTION comes from the brain (params.dir): the decoder knows the cursor
+ *  side, so APPROACH moves toward it, escapes away, WANDER keeps the direction
+ *  it picked — the walker never guesses a direction itself. */
+const WALK_MAG: Record<string, number> = {
+  MOVE_LEFT: 130,
   MOVE_RIGHT: 130,
-  BACK: 110,        // away from the cursor's last side
-  WANDER: 70,       // direction picked when the action starts
+  APPROACH: 320,
+  AVOID: 400,
+  JUMP: 400,
+  BACK: 110,
+  WANDER: 80,
 };
 
 export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: string): () => void {
@@ -28,14 +34,13 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
   let ws: WebSocket | null = null;
   let closed = false;
   let lastBounds: Rect | null = null;
-  let lastX = 0;               // last normalized cursor x, for APPROACH/AVOID direction
   let walkVx = 0;              // current window velocity, px/s
   let walkerTimer: NodeJS.Timeout | null = null;
   let linkConnected = false;
   let backendName = '';
-  let previousAction = '';
   let lastWalkSpeed = 0.4;     // DNg100-derived 0..1, matches the model's bob rate
   let moveAccum = 0;
+  let lastAction = '';         // escapes scurry at a higher step rate
 
   const status = (s: Record<string, unknown>) => {
     if ('connected' in s) linkConnected = Boolean(s.connected);
@@ -68,7 +73,7 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
         return;
       }
       if (msg.type === 'brain_state' && msg.action && msg.avatar) {
-        onAction(msg.action, (msg as { params?: { speed?: number } }).params);
+        onAction(msg.action, (msg as { params?: { speed?: number; dir?: number } }).params);
         getWindow()?.webContents.send('flypet:action', {
           action: msg.action, avatar: msg.avatar,
           expression: (msg as { expression?: string }).expression,
@@ -93,26 +98,27 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
 
   // ---- window walker -----------------------------------------------------
 
-  const onAction = (action: string, params?: { speed?: number }) => {
+  const onAction = (action: string, params?: { speed?: number; dir?: number }) => {
     const speed = Math.max(0, Math.min(1, params?.speed ?? 0));
     lastWalkSpeed = speed;
-    if (action === 'APPROACH') {
-      walkVx = (lastX < 0 ? -1 : lastX > 0 ? 1 : 0) * (120 + 200 * speed); // walk toward the cursor
-    } else if (action === 'AVOID' || action === 'JUMP') {
-      walkVx = (lastX <= 0 ? 1 : -1) * (260 + 140 * speed);               // sprint away from it
-    } else if (action === 'BACK') {
-      walkVx = (lastX <= 0 ? 1 : -1) * WALK_SPEED.BACK;                   // slow retreat
-    } else if (action === 'WANDER') {
-      if (walkVx === 0 || previousAction !== 'WANDER') {
-        walkVx = (Math.random() < 0.5 ? -1 : 1) * WALK_SPEED.WANDER;      // pick a direction once
-      }
-    } else {
-      const base = WALK_SPEED[action] ?? 0;
-      walkVx = base === 0 ? 0 : Math.sign(base) * (Math.abs(base) * (0.7 + 0.6 * speed));
+    lastAction = action;
+    if (held) {                 // grabbed: the user's hand owns the window
+      walkVx = 0;
+      return;
     }
-    previousAction = action;
-    if (walkVx !== 0 && walkerTimer === null) {
+    const base = WALK_MAG[action];
+    const dir = params?.dir ?? 0;
+    if (!base || !dir) {
+      walkVx = 0;               // not a moving action, or the brain says stay
+      return;
+    }
+    walkVx = dir * base * (0.7 + 0.6 * speed);
+    if (walkerTimer === null) {
       walkerTimer = setInterval(step, 33);
+    }
+    if (lastAction === 'JUMP' || lastAction === 'AVOID') {
+      moveAccum = Number.MAX_VALUE;   // a startle must move NOW: it lasts <100 ms
+      step();
     }
   };
 
@@ -134,10 +140,15 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
     const bounds = win.getBounds();
     const display = screen.getDisplayMatching(bounds).workArea;
     const speed = Math.max(0.15, Math.min(1, lastWalkSpeed));
-    const stepsPerSec = 5.5 + 7 * speed;
+    // One window step per model bob (nya_map uses the same rate for its AllY
+    // bob; kept below 4.5 Hz so the 10 Hz parameter stream doesn't alias).
+    // Escapes are the exception: JUMP/AVOID last only ~0.4 s, which is shorter
+    // than one slow step — they scurry in small fast steps instead.
+    const scurry = lastAction === 'JUMP' || lastAction === 'AVOID';
+    const stepsPerSec = scurry ? 12.0 : 2.2 + 2.3 * speed;
     const pxPerSec = Math.abs(walkVx);
     moveAccum += pxPerSec * 0.033;
-    const stepPx = Math.max(6, pxPerSec / stepsPerSec);
+    const stepPx = Math.max(scurry ? 4 : 6, pxPerSec / stepsPerSec);
     if (moveAccum >= stepPx) {
       const nx = Math.max(display.x, Math.min(display.x + display.width - bounds.width,
           bounds.x + Math.round(Math.sign(walkVx) * stepPx)));
@@ -157,28 +168,58 @@ export function startFlyPetLink(getWindow: () => BrowserWindow | null, url?: str
     }
   };
   let lastSelfMove = 0;
+  let lastSimMove = 0;
 
   // ---- sensors -----------------------------------------------------------
+
+  // The user grabbing the pet = dragging the window. While held the walker
+  // must stand down (the user's hand owns the window) and the brain feels a
+  // strong sustained contact; release after a quiet gap.
+  let held = false;
+  let lastExternalMove = 0;
+  const releaseHold = () => {
+    held = false;
+    sendEvent({ type: 'sensory_event', kind: 'pet_held_release', ts: Date.now() / 1000 });
+  };
 
   const pollTimer = setInterval(() => {
     const win = getWindow();
     if (!win || win.isDestroyed()) return;
+    // FLYPET_SIM_HELD=1: periodically nudge the window from outside the
+    // walker, to exercise the grabbed/released path without a real drag.
+    if (process.env.FLYPET_SIM_HELD === '1') {
+      const t = Date.now() / 1000;
+      if (t - lastSimMove > 2.0) {
+        lastSimMove = t;
+        const b = win.getBounds();
+        win.setPosition(b.x + (Math.sin(t) > 0 ? 40 : -40), b.y);
+      }
+    }
     const bounds = win.getBounds();
     if (lastBounds && (bounds.x !== lastBounds.x || bounds.y !== lastBounds.y)
         && Date.now() - lastSelfMove > 150) {
       // bounds moved by something other than our own walking => the user is
       // dragging the pet around
-      sendEvent({ type: 'sensory_event', kind: 'pet_drag', ts: Date.now() / 1000 });
+      lastExternalMove = Date.now();
+      if (!held) {
+        held = true;
+        walkVx = 0;                       // stop walking while grabbed
+        if (walkerTimer !== null) {
+          clearInterval(walkerTimer);
+          walkerTimer = null;
+        }
+        sendEvent({ type: 'sensory_event', kind: 'pet_held', ts: Date.now() / 1000 });
+      }
+    } else if (held && Date.now() - lastExternalMove > 500) {
+      releaseHold();
     }
     lastBounds = { ...bounds };
     const cursor = screen.getCursorScreenPoint();
-    const x = (cursor.x - (bounds.x + bounds.width / 2)) / 420;
-    if (Math.abs(x) <= 1) lastX = x;
     for (const ev of sensor.poll(cursor, bounds, Date.now())) sendEvent(ev);
   }, POLL_MS);
 
-  const onTap = (_e: Electron.IpcMainEvent) => {
-    sendEvent({ type: 'sensory_event', kind: 'pet_click', ts: Date.now() / 1000 });
+  const onTap = (_e: Electron.IpcMainEvent, cls?: string) => {
+    sendEvent({ type: 'sensory_event', kind: 'pet_click', cls: cls || '', ts: Date.now() / 1000 });
   };
   ipcMain.on('flypet:tap', onTap);
 
