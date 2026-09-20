@@ -104,6 +104,11 @@ uv run python brain-service/scripts/demo.py              # 合成情景演示
 
 ## 致谢与许可
 
+本项目以 [MIT](./LICENSE) 许可发布；`desktop/` 目录为 [NyaDeskPet](https://github.com/gameswu/NyaDeskPet)
+（MIT）的 fork，沿用其原许可与版权声明。内置 Live2D 模型为 Live2D Cubism
+[官方示例模型](https://www.live2d.com/zh-CHS/download/sample-data/)「虹色Mao PRO」，
+使用须遵守 Live2D 示例模型使用授权条款。
+
 - [fly.ai / flybrain](https://github.com/alextitonis/fly.ai)（MIT）— 大脑运行时；连接体数据 MaleCNS v1.0（CC BY 4.0，HHMI Janelia）
 - [NyaDeskPet](https://github.com/gameswu/NyaDeskPet)（MIT）— 桌面壳
 - [Jhongdlp/FlyBrain](https://github.com/Jhongdlp/FlyBrain)（MIT）— Brain Lab 点云渲染思路
