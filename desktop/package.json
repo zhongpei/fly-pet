@@ -43,7 +43,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "axios": "^1.6.0",
     "better-sqlite3": "^12.6.2",
     "highlight.js": "^11.11.1",
