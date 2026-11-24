@@ -44,7 +44,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "axios": "^1.6.0",
+    "axios": "^1.20.0",
     "better-sqlite3": "^12.6.2",
     "highlight.js": "^11.11.1",
     "https-proxy-agent": "^7.0.6",
