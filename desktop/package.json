@@ -56,7 +56,7 @@
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^7.3.2",
     "sherpa-onnx-node": "^1.12.23",
-    "ws": "^8.16.0"
+    "ws": "^8.23.0"
   },
   "build": {
     "appId": "com.nyadeskpet.app",
